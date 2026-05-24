@@ -97,6 +97,8 @@ def samd_generate(args, inputs, model, tokenizer):
 def main():
     args = parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path, 
         torch_dtype=args.dtype, 

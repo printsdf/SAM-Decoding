@@ -1,0 +1,153 @@
+feature: 2026-05-23-eagle3-integration
+created: 2026-05-23
+
+steps:
+  - action: "新建包骨架 + Config：建 samd/tree_model/eagle3/ 包，放空 __init__.py、eagle3_config.py（精简 EConfig）、eagle3_utils.py（拷贝 cnets.py 的 LlamaAttention/MLP/RMSNorm/LlamaDecoderLayeremb building blocks）"
+    exit_signal: "python -c 'from samd.tree_model.eagle3 import Eagle3' 不报 import 错误（Eagle3 可为空 stub）"
+    status: done
+
+  - action: "移植 Eagle3Model：按 ../EAGLE/eagle/model/cnets.py:Model 实现 __init__ / forward / topK_genrate / init_tree / load_weight，load_weight 支持 pytorch_model.bin + safetensors 两种格式，strict=False"
+    exit_signal: "用真实 EAGLE3 权重调 load_weight 返回的 unexpected_keys 为空、missing_keys 至多是 {d2t, t2d} 子集；构造后 fc.weight.shape[1] == 3*hidden_size 且 lm_head.weight.shape[0] == draft_vocab_size"
+    status: done
+
+  - action: "集成类 Eagle3:实现 Eagle3(TreeModel) 的 reset/update/gen_draft/gen_buffers，重点处理 topK_genrate 4-元组 → samd 2-元组（pred_ids list + buffers dict）翻译"
+    exit_signal: "单独构造 Eagle3 + mock accept_hidden_states（3H 维）+ 调 gen_draft(start_token) 能产出 (List[int], dict)，dict 含 tree_attn_mask / tree_position_ids / tree_retrieve_indices 三键"
+    status: done
+
+  - action: "base model 多层 patch：实现 samd/model_patch/llama_eagle3.py，patched LlamaModel.forward 在 idx ∈ {2, N//2, N-3} 三个位置抓 hidden state 并 dim=-1 concat 成 3H，作为 outputs.last_hidden_states 暴露"
+    exit_signal: "用最小 Llama 实例（LlamaConfig(num_hidden_layers=8)）+ patched forward 单步 forward 后 outputs.last_hidden_states.shape[-1] == 3 * hidden_size"
+    status: done
+
+  - action: "接通注册与选择：修改 tree_model/__init__.py（加 eagle3 键）、samd_config.py（Literal 加 eagle3 + __post_init__ 分支 + load_eagle3 函数）、model_patch/__init__.py（导出 eagle3_patch_dict）、samd_model.py:register_forward_patch（按 tree_method 选 patch_dict）"
+    exit_signal: "SamdConfig(tree_method='eagle3', tree_model_path=PATH) 构造成功；SamdModel(...) 初始化时打印的 patch setattr 日志显示走 eagle3 路径"
+    status: done
+
+  - action: "端到端验证：参照 tests/test_samd.py 模式写 EAGLE3 路径用例（真实权重 + 兼容 Llama base），与 base model generate(do_sample=False) 逐 token 对比；再回归跑 eagle / eagle2 / token_recycle 三条原路径"
+    exit_signal: "eagle3 路径生成 50 个 token 与 base greedy 逐 token 一致；其他三路径输出与改动前 byte-equal；git diff samd/tree_model/eagle2/ samd/tree_model/eagle/ samd/tree_model/token_recycle/ samd_sam_only/ 为空"
+    status: done
+
+checks:
+  # 名词契约（第 2.1 节）
+  - item: "Eagle3.gen_draft 返回 (List[int], Dict) 与 TreeModel 协议对齐；dict 含 tree_attn_mask / tree_position_ids / tree_retrieve_indices 三键"
+    source: 名词契约
+    status: passed
+
+  - item: "Eagle3Model.topK_genrate 返回 4-元组 (draft_tokens, retrieve_indices, tree_mask, tree_position_ids)"
+    source: 名词契约
+    status: passed
+
+  - item: "Eagle3Config 接受 draft_vocab_size / target_hidden_size 等 EAGLE3 专属字段（通过 PretrainedConfig kwargs 机制）"
+    source: 名词契约
+    status: passed
+
+  - item: "patched LlamaModel.forward 暴露的 outputs.last_hidden_states 维度为 [B, S, 3H]"
+    source: 名词契约
+    status: passed
+
+  # 编排骨架 / 流程级约束（第 2.2 节）
+  - item: "主流程：初始化（SamdConfig → load_eagle3 → Eagle3 → Eagle3Model → load_weight strict=False → init_tree → SamdModel.register_forward_patch 按 tree_method 选 eagle3_patch_dict）"
+    source: 编排骨架
+    status: passed
+
+  - item: "主流程：推理（prefill → draft.update(3H hidden) → loop decode（lookup → gen_draft → forward → eval_posterior → draft.update））"
+    source: 编排骨架
+    status: passed
+
+  - item: "last_hidden_states 维度差异（H vs 3H）由 patch 选择决定；SamdModel.prefill / decode 内部不出现按 tree_method 的条件分支"
+    source: 流程级约束
+    status: passed
+
+  - item: "strict=False 加载允许 d2t / t2d 缺失，但其他 missing key 或任何 unexpected key 必须打印警告并提示具体 key 列表"
+    source: 流程级约束
+    status: passed
+
+  - item: "加载阶段打印一行包含 (missing_keys, unexpected_keys, draft_vocab_size, base_vocab_size, hidden_size, captured_layer_indices) 的可观测信息"
+    source: 流程级约束
+    status: passed
+
+  - item: "Eagle3 路径仍使用 LlamaForCausalLM + monkey patch，不引入 KVLlamaForCausalLM 等新 base model 类"
+    source: 流程级约束
+    status: passed
+
+  # 挂载点（第 2.3 节）
+  - item: "M1：samd/tree_model/__init__.py:tree_model_cls 字典新增 'eagle3': Eagle3 键"
+    source: 挂载点
+    status: passed
+
+  - item: "M2：samd/samd_config.py:SamdConfig.tree_method 的 Literal 含 'eagle3'；__post_init__ 含 'eagle3' 分支；新增 load_eagle3(tree_model_path) 函数"
+    source: 挂载点
+    status: passed
+
+  - item: "M3：samd/model_patch/__init__.py 导出 eagle3_patch_dict + eagle3_attn_patch_dict（独立于现有 patch_dict）；samd/samd_model.py:register_forward_patch 按 self.samd_config.tree_method 选用对应 patch_dict"
+    source: 挂载点
+    status: passed
+
+  # 范围守护（第 1 节"明确不做" + 第 3 节 R1-R6）
+  - item: "不修改 samd/tree_model/eagle2/ 任何文件（git diff 该目录应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不修改 samd/tree_model/eagle/ 任何文件（git diff 该目录应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不修改 samd/tree_model/token_recycle/ 任何文件（git diff 该目录应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不在 samd_sam_only/ 集成 EAGLE3（git diff samd_sam_only/ 应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不支持非 Llama backbone（grep -rE 'modeling_qwen|modeling_mixtral|KVQwen|KVMixtral' samd/tree_model/eagle3/ 应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不实现 EAGLE3 训练代码（grep -rE '\\bloss\\b|optimizer|SmoothL1|criterion|\\.backward\\(' samd/tree_model/eagle3/ 应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不调整 SAM 切换阈值（grep -rE 'len_threshold|len_bias' samd/tree_model/eagle3/ 应为空）"
+    source: 范围守护
+    status: passed
+
+  - item: "不引入新 base model 类（grep -r 'KVLlamaForCausalLM' samd/ 应为空）"
+    source: 范围守护
+    status: passed
+
+  # 验收场景（第 3 节）
+  - item: "场景 1 初始化：tree_method='eagle3' + 有效权重路径，SamdConfig + SamdModel 构造成功；构造后 draft.tree_model 为 Eagle3 实例，fc.weight.shape == (H, 3H) 且 lm_head.weight.shape == (draft_vocab_size, H)"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 2 推理对齐：samd_model.generate(input_ids, ...) 生成 ≥ 50 个 token，无 shape / key error；与 base_model.generate(input_ids, do_sample=False, ...) 逐 token 一致"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 3 无 d2t 简化模式：vocab_size == draft_vocab_size 时（官方代码会 del d2t,t2d）权重 missing keys 仅含 {d2t, t2d} 子集，加载完成且推理通过"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 4 权重类型错位：tree_method='eagle3' 但 tree_model_path 指向 EAGLE2 权重 → 报清晰错误（提示 fc.weight shape mismatch），不允许 silent succeed"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 5 路径不存在：tree_model_path 不存在 → 报 FileNotFoundError 带具体路径"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 6 拼写错误：tree_method 拼写错误（如 'eagle_3' / 'EAGLE3'）→ SamdConfig.__post_init__ 阶段就 raise，不要等到 DraftModel.__init__ 才 KeyError"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 7 unexpected key 告警：strict=False 加载返回非空 unexpected_keys 时打印警告含 key 列表，提示用户检查权重版本"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 8 EAGLE2 回归：相同测试脚本 tree_method='eagle2' 路径输出 token 序列与本 feature 引入前完全一致"
+    source: 验收场景
+    status: passed
+
+  - item: "场景 9 其他路径回归：tree_method ∈ {'token_recycle', 'eagle'} 输出 token 序列与本 feature 引入前完全一致"
+    source: 验收场景
+    status: passed

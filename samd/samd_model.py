@@ -17,7 +17,7 @@ from .utils import (
 )
 from .cache import SamdCache, SamdStaticCache
 from .draft import DraftModel
-from .model_patch import patch_dict, attn_patch_dict
+from .model_patch import patch_dict, attn_patch_dict, eagle3_patch_dict, eagle3_attn_patch_dict
 from profile_utils import profile_decorator, profile_accept_length
 
 Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
@@ -62,14 +62,20 @@ class SamdModel(nn.Module):
         self.register_forward_patch()
 
     def register_forward_patch(self):
+        if self.samd_config.tree_method == "eagle3":
+            _patch_dict = eagle3_patch_dict
+            _attn_patch_dict = eagle3_attn_patch_dict
+        else:
+            _patch_dict = patch_dict
+            _attn_patch_dict = attn_patch_dict
         for module_name, module in self.lm.named_modules():
             module_name = "root" if module_name == "" else "root.{}".format(module_name)
-            if type(module) in patch_dict:
-                for fn_name, fn in patch_dict[type(module)]:
+            if type(module) in _patch_dict:
+                for fn_name, fn in _patch_dict[type(module)]:
                     setattr(module, fn_name, MethodType(fn, module))
                     print("setattr {} -> {}".format(module_name, fn_name))
-            if type(module) in attn_patch_dict:
-                for fn_name, fn in attn_patch_dict[type(module)]:
+            if type(module) in _attn_patch_dict:
+                for fn_name, fn in _attn_patch_dict[type(module)]:
                     setattr(module, fn_name, MethodType(fn, module))
                     setattr(module, "mask_state", self.mask_state)
                     setattr(module, "forward_state", self.forward_state)

@@ -18,7 +18,7 @@ class SamdConfig:
     )
     use_last_hidden_states: bool = field(default=False)
 
-    tree_method: Literal["token_recycle", "eagle", "eagle2"] = field(
+    tree_method: Literal["token_recycle", "eagle", "eagle2", "eagle3"] = field(
         default="token_recycle"
     )
     tree_model_path: Optional[str] = field(default=None)
@@ -37,6 +37,10 @@ class SamdConfig:
                 self.use_last_hidden_states = True
             elif self.tree_method == "eagle2":
                 tree_config = load_eagle2(self.tree_model_path)
+                self.tree_config = tree_config
+                self.use_last_hidden_states = True
+            elif self.tree_method == "eagle3":
+                tree_config = load_eagle3(self.tree_model_path)
                 self.tree_config = tree_config
                 self.use_last_hidden_states = True
             else:
@@ -91,6 +95,12 @@ def load_eagle(tree_model_path: str, tree_path: Optional[str] = None):
 
 
 def load_eagle2(tree_model_path: str):
+    with open(os.path.join(tree_model_path, "config.json")) as f:
+        tree_config = json.load(f)
+    return tree_config
+
+
+def load_eagle3(tree_model_path: str):
     with open(os.path.join(tree_model_path, "config.json")) as f:
         tree_config = json.load(f)
     return tree_config
