@@ -4,20 +4,23 @@ Usage:
 python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fastchat-t5-3b-v1.0
 """
 import argparse
+from typing import Optional
 from fastchat.utils import str_to_torch_dtype
 from evaluation.eval import run_evals, reorg_answer_files
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd_sam_only import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
 
 def sam_only_forward(
-    inputs, 
-    model: SamdModel, 
+    inputs,
+    model: SamdModel,
     tokenizer: PreTrainedTokenizer,
-    max_new_tokens: int, 
+    max_new_tokens: int,
     temperature: float = 0.0,
-    do_sample: bool = False
+    do_sample: bool = False,
+    max_cache_len: Optional[int] = None,
 ):
-    max_cache_len = model.lm.config.max_position_embeddings
+    if max_cache_len is None:
+        max_cache_len = model.lm.config.max_position_embeddings
     input_ids = inputs.input_ids
     outputs = model.generate(
         input_ids,
@@ -124,6 +127,12 @@ if __name__ == "__main__":
         type=int,
         default=5
     )
+    parser.add_argument(
+        "--max_cache_len",
+        type=int,
+        default=None,
+        help="Override SamdStaticCache size. Defaults to model.max_position_embeddings (compat with old SAM-Decoding behavior); set to e.g. 4096 on Llama-3.1 (131072) to avoid OOM on consumer GPUs.",
+    )
     args = parser.parse_args()
 
     question_file = f"evaluation/data/{args.bench_name}/question.jsonl"
@@ -195,6 +204,7 @@ if __name__ == "__main__":
         num_gpus_total=args.num_gpus_total,
         temperature=args.temperature,
         do_sample=do_sample,
+        max_cache_len=args.max_cache_len,
     )
 
     reorg_answer_files[args.template](answer_file)

@@ -37,6 +37,7 @@ class SamdGenerationConfig:
     top_p: float = field(default=0.0)
     top_k: int = field(default=0)
     logits_processor: LogitsProcessorList = field(default=None)
+    collect_diagnosis_trace: bool = field(default=False)
     
     def __post_init__(self):
         if not self.greedy:

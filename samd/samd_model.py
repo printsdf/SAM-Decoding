@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass, field
 from collections import namedtuple
-from typing import Optional, Union, List, Literal, Tuple, Dict
+from typing import Optional, Union, List, Literal, Tuple, Dict, Any
 from types import MethodType
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from .samd_config import SamdConfig, ForwardState, ForwardType, MaskState
@@ -17,10 +17,16 @@ from .utils import (
 )
 from .cache import SamdCache, SamdStaticCache
 from .draft import DraftModel
+from .diagnosis import make_trace_step
 from .model_patch import patch_dict, attn_patch_dict, eagle3_patch_dict, eagle3_attn_patch_dict
 from profile_utils import profile_decorator, profile_accept_length
 
-Outputs = namedtuple('Outputs', ['output_ids', 'decode_tokens', 'decode_steps', 'accepet_length_per_step'])
+Outputs = namedtuple(
+    'Outputs',
+    ['output_ids', 'decode_tokens', 'decode_steps',
+     'accepet_length_per_step', 'diagnosis_trace'],
+    defaults=[None],
+)
 
 class SamdModel(nn.Module):
     
@@ -178,14 +184,37 @@ class SamdModel(nn.Module):
         new_tokens = self.update_state(
             input_ids.squeeze(0),
             tree_logits.squeeze(0),
-            best_candidate, 
+            best_candidate,
             accept_length,
             candidates.candidate_tokens,
             candidate_indices,
             candidate_last_hidden_states,
         )
         # print("new_tokens:\n{}".format(new_tokens))
-        return sample_p, new_tokens
+        if self.gen_config.collect_diagnosis_trace:
+            accept_length_int = int(
+                accept_length.detach().cpu().item()
+                if hasattr(accept_length, "item") else accept_length
+            )
+            if candidates.type == CandidateType.tree:
+                trace_meta: Optional[Dict[str, Any]] = {
+                    "path_type": "tree",
+                    "best_candidate": int(best_candidate.detach().cpu().item()),
+                    "accept_length": accept_length_int,
+                    "candidates": candidates.candidate_tokens,
+                    "tree_logits": candidate_logits,
+                }
+            else:
+                trace_meta = {
+                    "path_type": "sequence",
+                    "best_candidate": None,
+                    "accept_length": accept_length_int,
+                    "candidates": None,
+                    "tree_logits": None,
+                }
+        else:
+            trace_meta = None
+        return sample_p, new_tokens, trace_meta
 
     # @profile_decorator("SamdModel.update_state")
     def update_state(self,
@@ -237,7 +266,7 @@ class SamdModel(nn.Module):
     def generate(self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor = None,
-        generation_config: SamdGenerationConfig = None, 
+        generation_config: SamdGenerationConfig = None,
     ) -> Outputs:
         if generation_config is None:
             generation_config = SamdGenerationConfig()
@@ -248,18 +277,37 @@ class SamdModel(nn.Module):
         self.set_cache(generation_config)
 
         self.draft.reset()
-        
+
         input_ids_list = input_ids.squeeze(0).tolist()
         sample_p = self.prefill(input_ids, attention_mask)
-        
+
         input_length = input_ids.shape[-1]
         decode_tokens = 0
         decode_steps = 0
         accepet_length_per_step = []
+        step_trace: Optional[List[Dict[str, Any]]] = (
+            [] if generation_config.collect_diagnosis_trace else None
+        )
+        t2d_buffer: Optional[torch.Tensor] = None
+        if (
+            generation_config.collect_diagnosis_trace
+            and self.samd_config.tree_method == "eagle3"
+        ):
+            t2d_buffer = self.draft.tree_model.model.t2d
         for step in range(generation_config.max_new_tokens):
             if input_length + decode_tokens + self.samd_config.max_predicts >= generation_config.max_cache_len:
                 break
-            sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
+            sample_p, new_ids, trace_meta = self.decode(sample_p, input_length + decode_tokens)
+            if step_trace is not None and trace_meta is not None:
+                step_trace.append(make_trace_step(
+                    step_idx=decode_steps,
+                    path_type=trace_meta["path_type"],
+                    accept_length=trace_meta["accept_length"],
+                    best_candidate=trace_meta["best_candidate"],
+                    candidates=trace_meta["candidates"],
+                    tree_logits=trace_meta["tree_logits"],
+                    t2d_buffer=t2d_buffer,
+                ))
             eos_index = None
             if self.eos_token in new_ids:
                 eos_index = new_ids.index(self.eos_token)
@@ -277,7 +325,13 @@ class SamdModel(nn.Module):
             if decode_tokens >= generation_config.max_new_tokens:
                 break
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
-        return Outputs(input_ids_list, decode_tokens, decode_steps, accepet_length_per_step)
+        return Outputs(
+            input_ids_list,
+            decode_tokens,
+            decode_steps,
+            accepet_length_per_step,
+            step_trace,
+        )
 
     @torch.inference_mode()
     def stream_generate(self,
@@ -304,7 +358,7 @@ class SamdModel(nn.Module):
         for step in range(generation_config.max_steps):
             if input_length + decode_tokens + self.samd_config.max_predicts >= generation_config.max_cache_len:
                 break
-            sample_p, new_ids = self.decode(sample_p, input_length + decode_tokens)
+            sample_p, new_ids, _ = self.decode(sample_p, input_length + decode_tokens)
             eos_index = None
             if self.eos_token in new_ids:
                 eos_index = new_ids.index(self.eos_token)

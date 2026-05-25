@@ -8,6 +8,8 @@ python3 gen_model_answer.py --model-path lmsys/fastchat-t5-3b-v1.0 --model-id fa
 import json
 import os
 import time
+from typing import Dict, List, Optional
+
 import torch
 import numpy as np
 import shortuuid
@@ -80,6 +82,10 @@ def get_model_answers(
         num_choices,
         **kwargs,
 ):
+    # collect_diagnosis_trace is consumed locally to drive per-turn trace
+    # collection; pop it out so it is not forwarded into forward_func, which
+    # receives the trace list via the explicit ``diagnosis_trace_out`` kwarg.
+    collect_diagnosis_trace = kwargs.pop("collect_diagnosis_trace", False)
 
     model.eval()
     print('Check model training state:', model.training)
@@ -175,6 +181,7 @@ def get_model_answers(
         choices = []
         for i in range(num_choices):
             cur_accept_lengths_tree = []
+            cur_diagnosis_traces: List[List[Dict]] = [] if collect_diagnosis_trace else None
             torch.manual_seed(i)
             messages = [
                 {"role": "system",
@@ -197,6 +204,16 @@ def get_model_answers(
                 )
                 inputs = tokenizer([prompt], add_special_tokens=False, return_tensors="pt").to("cuda")
                 input_ids = inputs.input_ids
+                turn_trace: Optional[list] = [] if collect_diagnosis_trace else None
+                trace_kwargs = {"diagnosis_trace_out": turn_trace} if collect_diagnosis_trace else {}
+                # Pre-init for the RuntimeError fallback path so the post-try
+                # bookkeeping (steps.append / new_tokens.append / wall_time.append /
+                # cur_accept_lengths_tree.extend) does not raise UnboundLocalError
+                # when forward_func fails before assigning these.
+                step = 0
+                new_token = 0
+                total_time = 0.0
+                accept_length_tree: list = []
                 try:
                     torch.cuda.synchronize()
                     start_time = time.time()
@@ -205,6 +222,7 @@ def get_model_answers(
                         model,
                         tokenizer,
                         max_new_tokens,
+                        **trace_kwargs,
                         **kwargs,
                     )
                     torch.cuda.synchronize()
@@ -247,19 +265,27 @@ def get_model_answers(
                 new_tokens.append(int(new_token))
                 wall_time.append(total_time)
                 cur_accept_lengths_tree.extend(accept_length_tree)
+                if cur_diagnosis_traces is not None:
+                    # turn_trace stays an empty list when the ERROR path skipped
+                    # the forward_func call, keeping the outer list aligned with
+                    # ``turns``.
+                    cur_diagnosis_traces.append(turn_trace or [])
                 messages.append({
                     "role": "assistant",
                     "content": output
                 })
             # torch.cuda.empty_cache()
-            choices.append({
-                "index": i, 
-                "turns": turns, 
-                "decoding_steps": steps, 
-                "new_tokens": new_tokens, 
-                "wall_time": wall_time, 
-                "accept_lengths": cur_accept_lengths_tree
-            })
+            choice_dict = {
+                "index": i,
+                "turns": turns,
+                "decoding_steps": steps,
+                "new_tokens": new_tokens,
+                "wall_time": wall_time,
+                "accept_lengths": cur_accept_lengths_tree,
+            }
+            if cur_diagnosis_traces is not None:
+                choice_dict["diagnosis_traces"] = cur_diagnosis_traces
+            choices.append(choice_dict)
 
         # Dump answers
         os.makedirs(os.path.dirname(answer_file), exist_ok=True)
