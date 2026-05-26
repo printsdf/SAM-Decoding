@@ -3,8 +3,10 @@ doc_type: requirement
 slug: evaluation-vmiss-diagnosis
 pitch: 在自己数据集上对比推测解码策略的真实加速度，并暴露 draft 模型的词表盲点
 status: current
-last_reviewed: 2026-05-25
-implemented_by: []
+last_reviewed: 2026-05-26
+implemented_by:
+  - 2026-05-24-medqa-vmiss-eval
+  - 2026-05-25-bench-cross-domain-speedup
 tags: [evaluation, vmiss, accept-length, benchmark, draft-model]
 ---
 
@@ -32,3 +34,16 @@ tags: [evaluation, vmiss, accept-length, benchmark, draft-model]
 - 只有 EAGLE3 路径能算 V_miss（依赖它的 draft 词表映射机制）；其他 tree_method（EAGLE / EAGLE2 / Token Recycle）的 trace 字段会留空。
 - 不提供"看到 V_miss 高之后怎么补救"的能力 —— fine-tune draft model 词表、扩词表都是另外的事。
 - 只支持 Llama 系列 base model + 单 GPU + batch_size=1（继承 samd 现有限制）。
+
+## 变更日志
+
+### 2026-05-26（feature `2026-05-25-bench-cross-domain-speedup`）
+
+- 扩展到 2 个 bench（NIH MedQuAD 200 题 free-form 医学问答 + mt_bench 80 题通用对话）
+- 加 wall-time 加速比维度：4 组对照（新增 transformers baseline）× 2 bench；phase1 trace OFF 保证速度数据纯净
+- 首次跨 bench 定量验证 V_miss 差异：medquad 28.8% vs mt_bench 21.5%（~7pp），确认医学专名词表盲点不是 MCQ 输出模式导致的假象
+- 加速比结论：samd_eagle3 在 mt_bench 3.30x / medquad 3.03x，均优于 pure_eagle3（3.19x / 2.91x），SAM 切换在两个 domain 均有净正收益
+
+### 2026-05-25（feature `2026-05-24-medqa-vmiss-eval`）
+
+- 初始实现：diagnosis trace 基础设施（7-key schema）+ MedQA MCQ 80 题 + 三组对照一键跑批 + analyze_vmiss.py

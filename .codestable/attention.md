@@ -17,6 +17,7 @@
 ### 命令与脚本陷阱
 
 - Llama-3 系列 tokenizer 默认 `pad_token=None`，`tests/test_samd.py:113` 用 `padding=True` 会 raise；脚本里已加 `if tokenizer.pad_token is None: tokenizer.pad_token = tokenizer.eos_token` 兜底，未来扩展 tokenizer 路径时记得保留这条
+- 跑批评测脚本 `scripts/run_*.sh` 统一用单一 sh 串完所有阶段（fetch + phase1 + phase2 + analyze），不拆 sub-script 让用户多次触发；飞书通知节点已标中间进度足够看进度
 
 ### 路径与目录约定
 

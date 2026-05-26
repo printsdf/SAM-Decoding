@@ -1,0 +1,209 @@
+feature: 2026-05-25-bench-cross-domain-speedup
+created: 2026-05-25
+
+steps:
+  - action: "medquad_prep.py 骨架：写 evaluation/medquad_prep.py，CLI 接 --num_questions (默认 200) + --out_path (默认 evaluation/data/medquad/question.jsonl)；用 datasets.load_dataset('lavita/MedQuAD', split='train') 下载，截前 N 题；free-form prompt 模板（直接 question 字段作 turns[0]，无 MCQ 结构）；import datasets 失败给清晰 ImportError 替换提示（沿用 medqa_prep 同 pattern）"
+    exit_signal: "python -m evaluation.medquad_prep --num_questions 5 --out_path /tmp/medquad_smoke.jsonl → 文件 5 行；head -n 1 解析 JSON 含 question_id (int) / category=='medquad' / turns:List[str]；turns[0] 不含 'A.' / 'B.' / 'Final answer:' / 'Answer:' 等 MCQ 强结构标记"
+    status: done
+
+  - action: "speed.py 扩 medquad 类别：修改 evaluation/speed.py:73:get_single_speedup 的 task 列表加 'medquad'；其他逻辑（speed 函数 + multi-run）不动"
+    exit_signal: "python -m evaluation.speed --file-path <samd.jsonl> --base-path <baseline.jsonl> --tokenizer-path <model_path> 跑通后 stdout 含 8 条 task 段（mt_bench / translation / summarization / qa / math_reasoning / rag / medquad / overall）；其中 medquad 段 #Mean accepted tokens / Tokens per second / Speedup ratio 都是数字（非 None / 非 N/A）"
+    status: done
+
+  - action: "single sh 跑批入口：写 scripts/run_bench_cross_domain_speedup.sh，sequential 跑完所有阶段：(a) fetch [cp ../EAGLE mt_bench → data/mt_bench + medquad_prep --num_questions 200]；(b) phase1 [8 inference, trace OFF: 4 组 × 2 bench]；(c) phase1 analyze [speed.py 跑 6 个 group×bench]；(d) phase2 [4 inference, trace ON: EAGLE3 两组 × 2 bench]；(e) phase2 analyze [analyze_vmiss.py 跑 2 个 bench，sam_only 复用 phase1 文件保 N/A 行]；含 source .env / notify() / trap ERR / fmt_elapsed 飞书通知（沿用上一个 feature 模式）；不拆 sub-script（attention.md 项目约定）"
+    exit_signal: "bash -n scripts/run_bench_cross_domain_speedup.sh shell 语法通过；脚本读 .env 失败时 fallback 到默认硬编码路径（不强制 .env）；脚本不存在调用 bash scripts/run_phase*.sh 等 sub-script"
+    status: done
+
+  - action: "端到端 GPU 跑批 + 数据落盘：在 GPU 上 bash scripts/run_bench_cross_domain_speedup.sh 跑完，预算 ~10 小时；中间不需要用户交互；飞书通知每阶段进度"
+    exit_signal: "(a) evaluation/data/{mt_bench,medquad}/model_answer/ 各含 6 个 jsonl 文件（baseline + pure_eagle3_p1 + samd_eagle3_p1 + sam_only_p1 + pure_eagle3_p2 + samd_eagle3_p2）；(b) phase1 三组 samd 相对 baseline 的 speedup_ratio 均 > 1.0（pure_eagle3 / samd_eagle3 > 2.0 期望，sam_only > 1.0 接受接近 1.0）；(c) phase2 EAGLE3 两组在两个 bench 上的 V_miss rate 均落在 [0%, 60%]（非 None 非 N/A）；(d) sam_only 行 tree_step_vmiss_rate=='N/A'"
+    status: done
+
+  - action: "结果汇总：跑完后 stdout 含 phase1 6 张子任务表（speed.py 输出，每组×每 bench）+ phase2 2 张表（analyze_vmiss.py 输出，每 bench 一张），用于 acceptance 第 9 节研究发现归并"
+    exit_signal: "飞书 ✅ ALL DONE 通知含 phase1 / phase2 总用时 + 简短结果摘要；本地 stdout/log 文件含 mt_bench / medquad 各 1 张 V_miss markdown 表 + 6 段 speed.py 任务输出"
+    status: done
+
+checks:
+  # 名词契约（第 2.1 节）
+  - item: "evaluation/medquad_prep.py 存在，CLI 接 --num_questions (默认 200) + --out_path (默认 evaluation/data/medquad/question.jsonl)"
+    source: 名词契约
+    status: passed
+
+  - item: "medquad question.jsonl 每行 JSON 含 question_id:int / category:'medquad' / turns:List[str]"
+    source: 名词契约
+    status: passed
+
+  - item: "medquad turns[0] 是 free-form 病人提问文本，不含 MCQ 强结构（grep 'A\\.' / 'Final answer:' / 'Answer:' 在 turns 内为空 / 极少）"
+    source: 名词契约
+    status: passed
+
+  - item: "evaluation/data/mt_bench/question.jsonl 从 ../EAGLE/eagle/data/mt_bench/ cp，含 80 行 FastChat 标准 multi-turn 格式"
+    source: 名词契约
+    status: passed
+
+  - item: "evaluation/speed.py:73:get_single_speedup task 列表新增 'medquad'；原 6 个任务 + overall 不动"
+    source: 名词契约
+    status: passed
+
+  # 编排骨架 / 流程级约束（第 2.2 节）
+  - item: "scripts/run_bench_cross_domain_speedup.sh 单脚本顺序执行：fetch → phase1 (8 inference) → phase1 analyze (speed.py × 6) → phase2 (4 inference) → phase2 analyze (analyze_vmiss × 2)"
+    source: 编排骨架
+    status: passed
+
+  - item: "phase1 4 组 × 2 bench = 8 inference 调用；trace OFF（baseline 天然无 trace；EAGLE3 两组不传 --collect_diagnosis_trace；sam_only 同样不传）"
+    source: 编排骨架
+    status: passed
+
+  - item: "phase2 EAGLE3 两组 × 2 bench = 4 inference 调用；trace ON（pure_eagle3 / samd_eagle3 显式 --collect_diagnosis_trace）"
+    source: 编排骨架
+    status: passed
+
+  - item: "single sh 不拆 sub-script：脚本不出现 'bash scripts/run_phase' / 'source scripts/' 等调用其他 sub-script 的语句（attention.md 项目约定）"
+    source: 流程级约束
+    status: passed
+
+  - item: "trace OFF / ON 用 model-id 后缀区分：phase1 用 '_p1' 后缀（如 pure_eagle3_mt_bench_p1）；phase2 用 '_p2' 后缀；避免互相覆盖"
+    source: 流程级约束
+    status: passed
+
+  - item: "phase1 + phase2 共用同一份 question.jsonl；不为 phase2 单独 prep 一份"
+    source: 流程级约束
+    status: passed
+
+  - item: "baseline 只跑 phase1（transformers default generate 无 trace 概念，phase2 不跑 baseline 配置）"
+    source: 流程级约束
+    status: passed
+
+  - item: "sam_only 跑 phase1，phase2 不跑（无 t2d 收 V_miss 无意义）；analyze_vmiss 用 phase1 的 sam_only 文件作为第三组保 N/A 行"
+    source: 流程级约束
+    status: passed
+
+  - item: "set -e + trap ERR + notify 每阶段进度（START fetch / phase1 / phase1 analyze / phase2 / phase2 analyze / ALL DONE）；webhook 未配置时 graceful degrade 到 stdout"
+    source: 流程级约束
+    status: passed
+
+  # 挂载点（第 2.3 节）
+  - item: "M1：evaluation/data/mt_bench/question.jsonl 数据（从 EAGLE cp，single sh fetch 阶段产出）"
+    source: 挂载点
+    status: passed
+
+  - item: "M2：evaluation/data/medquad/question.jsonl 数据（200 题 free-form，medquad_prep.py 产出）"
+    source: 挂载点
+    status: passed
+
+  - item: "M3：evaluation/medquad_prep.py 工具（HF lavita/MedQuAD → question.jsonl）"
+    source: 挂载点
+    status: passed
+
+  - item: "M4：evaluation/speed.py:73 task 列表含 'medquad'（让 speed.py 能算 medquad 子任务加速比）"
+    source: 挂载点
+    status: passed
+
+  - item: "M5：scripts/run_bench_cross_domain_speedup.sh single sh 跑批入口（删了 feature 消失：fetch / phase1 / phase2 / analyze 串不起来）"
+    source: 挂载点
+    status: passed
+
+  # 范围守护（第 1 节"明确不做" + 第 3 节 R1-R9）
+  - item: "R1：git diff samd/ 应为空（不动主推理）"
+    source: 范围守护
+    status: passed
+
+  - item: "R2：git diff samd_sam_only/ 应为空"
+    source: 范围守护
+    status: passed
+
+  - item: "R3：git diff evaluation/eval_vicuna.py evaluation/eval_llama3.py 应为空"
+    source: 范围守护
+    status: passed
+
+  - item: "R4：git diff evaluation/inference_samd.py evaluation/inference_sam_only.py evaluation/inference_baseline.py 应为空（不动 forward 逻辑）"
+    source: 范围守护
+    status: passed
+
+  - item: "R5：git diff evaluation/medqa_prep.py evaluation/analyze_vmiss.py 应为空（不动上一个 feature 工具）"
+    source: 范围守护
+    status: passed
+
+  - item: "R6：grep -rE 'spec_bench|humaneval|gsm8k|legal|finance|alpaca|MedQA[^u]' scripts/run_bench_cross_domain_speedup.sh evaluation/medquad_prep.py 应为空（不引其他 bench / 不混 MCQ MedQA）"
+    source: 范围守护
+    status: passed
+
+  - item: "R7：grep -rE 'accuracy|correct|answer_correct|grade' scripts/run_bench_cross_domain_speedup.sh evaluation/medquad_prep.py 应为空（不评估答题正确率）"
+    source: 范围守护
+    status: passed
+
+  - item: "R8：grep -rE 'A\\.|B\\.|C\\.|D\\.|Final answer|Answer:' evaluation/medquad_prep.py 应为空（不写 MCQ 强结构 prompt 模板）"
+    source: 范围守护
+    status: passed
+
+  - item: "R9：scripts/run_bench_cross_domain_speedup.sh 不调用 sub-script（grep 'bash scripts/run_phase' / 'bash scripts/test_' / 'source scripts/' 应为空，single sh 约定）"
+    source: 范围守护
+    status: passed
+
+  # 验收场景（第 3 节）
+  - item: "S1 数据准备：脚本 fetch 阶段完成后 evaluation/data/mt_bench/question.jsonl 80 行 + evaluation/data/medquad/question.jsonl 200 行；两者首行 JSON 合法"
+    source: 验收场景
+    status: passed
+
+  - item: "S2 medquad_prep 输出：python -m evaluation.medquad_prep --num_questions N 产出 N 行 jsonl；每行含 question_id (int) / category ('medquad') / turns (List[str])；turns[0] 是病人 free-form 提问"
+    source: 验收场景
+    status: passed
+
+  - item: "S3 speed.py medquad 支持：speed.py 跑任意 file pair → stdout 含 medquad task 段（tokens/sec / speedup_ratio 都是数字）"
+    source: 验收场景
+    status: passed
+
+  - item: "S4 phase1 完整产出：phase1 完成后 evaluation/data/{mt_bench,medquad}/model_answer/ 各 4 个 jsonl（baseline + 3 个 _p1）；行数 = 该 bench 题数（80 / 200）"
+    source: 验收场景
+    status: passed
+
+  - item: "S5 phase2 完整产出：phase2 完成后 evaluation/data/{mt_bench,medquad}/model_answer/ 各 2 个 _p2.jsonl（pure_eagle3_p2 + samd_eagle3_p2）；含 diagnosis_traces 字段"
+    source: 验收场景
+    status: passed
+
+  - item: "S6 加速比合理性：phase1 三组 samd 相对 baseline 的 speedup_ratio 都 > 1.0；sam_only 在 mt_bench 上可能接近 1.0"
+    source: 验收场景
+    status: passed
+
+  - item: "S7 V_miss 跨 bench 对比可解释：phase2 输出含 mt_bench / medquad 各一张 V_miss 表；两个 bench 的 V_miss rate 差异可量化（数字差 > 5% 或 < 5%，无论方向均能支持研究结论）"
+    source: 验收场景
+    status: passed
+
+  - item: "S8 single sh 一条命令跑完：bash scripts/run_bench_cross_domain_speedup.sh 单命令启动后无人值守跑完所有阶段；中间不需要用户交互；飞书通知每阶段进度"
+    source: 验收场景
+    status: passed
+
+  - item: "S9 trace OFF byte-equal：phase1 pure_eagle3 / samd_eagle3 输出 token 序列与 phase2 同 bench trace ON 跑的输出 byte-equal"
+    source: 验收场景
+    status: passed
+
+  - item: "S10 baseline accept_lengths 字段：baseline jsonl 的 accept_lengths 值都是 1（inference_baseline.py:24 [1]*new_token），speed.py 算 mean=1.0 是预期"
+    source: 验收场景
+    status: passed
+
+  - item: "S11 mt_bench multi-turn：mt_bench 题 turns 长度 2，eval_llama3 正确遍历两轮；ans_json choices[i].turns 长度 == 2"
+    source: 验收场景
+    status: passed
+
+  - item: "S12 medquad free-form 输出验证：phase1 medquad answer 文件 choices[i].turns[0] 文本不强制含 'Final answer:' / 'A/B/C/D' 类 MCQ 结构（采样 5 条人工核查）"
+    source: 验收场景
+    status: passed
+
+  - item: "S13 中途失败可恢复：脚本任一阶段失败后已落盘 jsonl 保留；用户改脚本注释已完成阶段重跑剩余阶段即可"
+    source: 验收场景
+    status: passed
+
+  - item: "S14 数据缺失警告：fetch 阶段若 ../EAGLE/eagle/data/mt_bench/question.jsonl 不存在 → 报清晰错误指明路径；medquad_prep 如 datasets 库不可用 → 给清晰 ImportError"
+    source: 验收场景
+    status: passed
+
+  - item: "S15 飞书 webhook 未配置：notify() 函数 graceful degrade 到 stdout（沿用上一个 feature pattern）"
+    source: 验收场景
+    status: passed
+
+  - item: "S16 samd / samd_sam_only / eval_*.py 不动：git diff 6 个文件应为空"
+    source: 验收场景
+    status: passed
+
+  - item: "S17 上一个 feature MedQA 80 题数据完整保留：evaluation/data/medqa/ 目录下的 model_answer/ jsonl 不被覆写（本 feature 用 evaluation/data/medquad/ 新目录）"
+    source: 验收场景
+    status: passed

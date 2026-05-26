@@ -70,7 +70,7 @@ def speed(jsonl_file, jsonl_file_base, tokenizer, task=None, report=True):
 
 
 def get_single_speedup(jsonl_file, jsonl_file_base, tokenizer_path):
-    for subtask_name in ["mt_bench", "translation", "summarization", "qa", "math_reasoning", "rag", "overall"]:
+    for subtask_name in ["mt_bench", "translation", "summarization", "qa", "math_reasoning", "rag", "medquad", "overall"]:
         speed(jsonl_file, jsonl_file_base, tokenizer_path, task=subtask_name)
 
 

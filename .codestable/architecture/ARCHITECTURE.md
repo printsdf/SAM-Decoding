@@ -2,7 +2,7 @@
 
 > 状态：骨架（待补全 — 见第 2/4 节占位）
 > 创建日期：2026-05-23
-> 最近更新：2026-05-25（feature `2026-05-24-medqa-vmiss-eval` 归并）
+> 最近更新：2026-05-26（feature `2026-05-25-bench-cross-domain-speedup` 归并）
 
 ## 1. 项目简介
 
@@ -29,8 +29,10 @@
   - `inference_{baseline,eagle,eagle2,pld,token_recycle}.py` — 各路径独立入口
   - `eval_llama3.py` / `eval_vicuna.py` — `forward_func` 协议主循环（question × turn 双层），按 `collect_diagnosis_trace` kwarg 在 ans_json `choices[*].diagnosis_traces` 写 per-turn trace
   - `medqa_prep.py` — HuggingFace `bigbio/med_qa` → Spec-Bench 格式 `question.jsonl`（2026-05-24 引入，需 `datasets<3.0`）
+  - `medquad_prep.py` — HuggingFace `lavita/MedQuAD`（NIH 真实医学问答）→ Spec-Bench 格式 `question.jsonl`；free-form prompt 模板（直接 question 字段作 turns[0]，无 MCQ scaffolding）（2026-05-26 引入，需 `datasets<3.0`）
   - `analyze_vmiss.py` — 三组 answer file → V_miss / accept_length 对比 markdown 表（2026-05-24 引入）
 - **`tools/`** — 离线工具，主要用于构建 Static SAM 数据（`prepare_prompts.py` / `gen_response.py` / `gen_sam_alpaca.py` 三步流水线）
+- **`scripts/run_bench_cross_domain_speedup.sh`** — 两阶段跨 bench 跑批入口（2026-05-26 引入）。phase1（trace OFF，4 组 × 2 bench = 8 次 inference）测 wall-time 加速比；phase2（trace ON，EAGLE3 两组 × 2 bench = 4 次 inference）收 V_miss。单脚本顺序执行 fetch → phase1 → phase1 analyze → phase2 → phase2 analyze，飞书通知各阶段进度
 
 ## 4. 关键架构决定
 
@@ -45,5 +47,6 @@
 - **`SamdModel` 仅支持 `batch_size=1`**（`samd_model.py:240` 显式 assert）
 - 不支持非 Llama backbone（Qwen2/Qwen3/Mixtral 等）—— 现有 patch 只覆盖 `LlamaForCausalLM` / `LlamaModel`
 - **`SamdGenerationConfig.collect_diagnosis_trace` 默认 False**（2026-05-24 引入）。off 时主推理路径零开销（trace_meta=None，无 torch ops）；on 时单 decode step 多 1 次 vocab-wide `torch.argmax`（取 verifier_target）+ 1 次 `t2d` O(1) lookup（< 1% wall-time 增量）；answer file 体积增长 ~5x（per-step trace dict 7 字段持久化）
+- **V_miss 与 wall-time 加速比必须分两阶段跑（trace OFF 测速 + trace ON 收诊断），同一 bench 不能用同次产出**（2026-05-26 引入约束）。trace ON 带来 ~1% wall-time 增量，若加速比与 baseline 差值较小（如 sam_only ~1.1-1.4x）该误差足以令方向性结论偏移；`scripts/run_bench_cross_domain_speedup.sh` 的 phase1/phase2 分离 + `_p1` / `_p2` model-id 后缀命名是这条约束的工程落点
 - **Llama-3.1 / 长 context base model 跑 `evaluation/inference_samd.py` 或 `inference_sam_only.py` 时必须显式传 `--max_cache_len ≤ 4096`**（2026-05-24 引入约束）。默认值是 `model.lm.config.max_position_embeddings`（Llama-3.1 = 131072），`SamdStaticCache.__init__` 会 alloc `[B × kv_heads × max_cache_len × head_dim × 2(K+V) × dtype_bytes × num_layers]` = ~16 GiB KV cache，与模型自身 16 GiB + EAGLE3 draft 1 GiB 一起远超 24 GiB GPU。`tests/test_samd.py` 走 CLI `--max_cache_len` 默认 2048 不受影响；只有 inference 入口需要补
 
