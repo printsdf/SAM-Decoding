@@ -5,6 +5,8 @@ from copy import deepcopy
 from collections import deque
 from tqdm import tqdm
 
+from .tree_draft import SamTreeBudget, build_sam_tree
+
 class DynSAM:
    
     @dataclass
@@ -13,10 +15,11 @@ class DynSAM:
         link: int
         length: int
         min_endpos: int
+        cnt_endpos: int
 
     def __init__(self, n_predicts: int = 40):
         self.n_predicts = n_predicts
-        self.states: List[DynSAM.SAMState] = [DynSAM.SAMState(next={}, link=-1, length=0, min_endpos=0)]
+        self.states: List[DynSAM.SAMState] = [DynSAM.SAMState(next={}, link=-1, length=0, min_endpos=0, cnt_endpos=0)]
         self.input_ids: List[int] = [-1]
         self.last = 0
         self.max_length = 0
@@ -26,7 +29,7 @@ class DynSAM:
         self.cur_length = 0
     
     def reset(self):
-        self.states: List[DynSAM.SAMState] = [DynSAM.SAMState(next={}, link=-1, length=0, min_endpos=0)]
+        self.states: List[DynSAM.SAMState] = [DynSAM.SAMState(next={}, link=-1, length=0, min_endpos=0, cnt_endpos=0)]
         self.input_ids: List[int] = [-1]
         self.last = 0
         self.max_length = 0
@@ -44,7 +47,8 @@ class DynSAM:
             DynSAM.SAMState(
                 next={}, link=-1, 
                 length=self.max_length, 
-                min_endpos=self.max_length
+                min_endpos=self.max_length,
+                cnt_endpos=0,
             )
         )
         p = self.last
@@ -65,6 +69,9 @@ class DynSAM:
                     p = self.states[p].link
                 self.states[q].link = self.states[cur].link = clone
         self.last = cur
+        while cur != 0:
+            self.states[cur].cnt_endpos += 1
+            cur = self.states[cur].link
            
     def transfer_state(self, index: int, length: int, token: int):
         while index != 0 and token not in self.states[index].next:
@@ -111,3 +118,18 @@ class DynSAM:
         if len(pred_ids) < self.n_predicts:
             pred_ids.extend([0] * (self.n_predicts - len(pred_ids)))
         return pred_ids
+
+    def gen_draft_raw(self, index: int, start_token: int, max_len: int):
+        index = self.to_anc(index)
+        endpos = self.states[index].min_endpos
+        return [start_token] + self.input_ids[endpos + 1:endpos + max_len]
+
+    def gen_tree_draft(
+        self,
+        index: int,
+        match_length: int,
+        start_token: int,
+        budget: SamTreeBudget,
+    ):
+        index = self.to_anc(index)
+        return build_sam_tree(self.states, index, match_length, start_token, budget)

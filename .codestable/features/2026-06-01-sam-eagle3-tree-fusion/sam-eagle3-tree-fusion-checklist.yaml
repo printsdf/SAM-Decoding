@@ -1,0 +1,69 @@
+feature: 2026-06-01-sam-eagle3-tree-fusion
+created: 2026-06-01
+
+steps:
+  - action: "编排前置：新增 tree_fusion 配置与合法性骨架"
+    exit_signal: "默认 tree_fusion=none 保持现有路径；非 EAGLE3 开启 sam_sequence_graft 会明确报错"
+    status: done
+  - action: "计算节点：实现 TreeSpec 与 tree buffer builder"
+    exit_signal: "手写小树能生成正确的 tree_attn_mask / tree_position_ids / tree_retrieve_indices"
+    status: done
+  - action: "计算节点：实现 EAGLE3 tree 到 TreeSpec 的转换与 round-trip 验证"
+    exit_signal: "EAGLE3 tree 转成 TreeSpec 再导出 buffers 后，retrieve paths 与原始 tree 等价"
+    status: done
+  - action: "计算节点：提供不含 padding 的 raw SAM sequence 生成路径"
+    exit_signal: "raw sequence 不含 padding；legacy gen_draft() padding 行为不变"
+    status: done
+  - action: "编排接入：在 DraftModel lookup 中接入 SAM sequence graft fusion 分支"
+    exit_signal: "SAM-hit 场景返回 CandidateType.tree fused candidate，且节点数相对纯 EAGLE3 合理增长或因 prefix merge 保持最小增长"
+    status: done
+  - action: "入口与实验闭环：CLI / evaluation 参数透传并跑最小 ablation"
+    exit_signal: "能用入口跑默认 EAGLE3、二选一 SAMD+EAGLE3、fusion 三组，并收集 accepted length / wall-time"
+    status: done
+
+checks:
+  - item: "新增配置项 SamdConfig.tree_fusion，默认值为 none"
+    source: 挂载点
+    status: passed
+  - item: "tree_fusion=sam_sequence_graft 仅支持 tree_method=eagle3，其他 tree_method 明确报错"
+    source: 流程级约束
+    status: passed
+  - item: "fusion 发生在 DraftModel / tree model 输出组合层，不侵入 Eagle3Model.topK_genrate"
+    source: 编排骨架
+    status: passed
+  - item: "fused tree 返回 CandidateType.tree，并可被现有 SamdModel.decode() / eval_posterior() 消费"
+    source: 名词契约
+    status: passed
+  - item: "EAGLE3 tree 在 Stage A 中全保留，SAM branch 仅追加 suffix 或复用 shared prefix"
+    source: 流程级约束
+    status: passed
+  - item: "raw SAM sequence 不包含 legacy gen_draft() 的 padding 0"
+    source: 验收场景
+    status: passed
+  - item: "默认 tree_fusion=none 时现有 EAGLE3 / SAMD 行为不变"
+    source: 验收场景
+    status: passed
+  - item: "SAM match 不足时返回纯 EAGLE3 tree，不追加 SAM branch"
+    source: 验收场景
+    status: passed
+  - item: "SAM match 达阈值时 fused tree 包含完整 EAGLE3 tree 与 SAM branch 真实 token"
+    source: 验收场景
+    status: passed
+  - item: "shared prefix 场景复用已有节点，不出现同父同 token 重复节点"
+    source: 验收场景
+    status: passed
+  - item: "代码中不新增 tree_method 字符串 eagle3_fusion"
+    source: 范围守护
+    status: passed
+  - item: "Stage A 不接入 static SAM cnt_endpos / states_topk_next，不实现 multi-branch SAM tree fusion"
+    source: 范围守护
+    status: passed
+  - item: "Stage A 不根据 EAGLE3 score 或 SAM score 删除 EAGLE3 节点"
+    source: 范围守护
+    status: passed
+  - item: "最小 ablation 三组可跑，并收集 decode steps / accepted length per step / total decode tokens / wall-time / speedup ratio"
+    source: 验收场景
+    status: passed
+  - item: "开启 fusion 后 greedy 输出仍与 base model greedy 一致"
+    source: 验收场景
+    status: waived

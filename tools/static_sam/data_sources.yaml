@@ -1,0 +1,36 @@
+allowed_sources:
+  - source_id: local_medical_qa_v1
+    domain: medical
+    source_name: Local Medical QA v1
+    license: internal/research-only
+    is_eval_dataset: false
+    eval_exclusion_reason: local domain QA, not a benchmark or evaluation dataset
+    allow_generated_response: true
+    allow_static_sam_build: true
+
+  - source_id: local_finance_qa_v1
+    domain: finance
+    source_name: Local Finance QA v1
+    license: internal/research-only
+    is_eval_dataset: false
+    eval_exclusion_reason: local domain QA, not a benchmark or evaluation dataset
+    allow_generated_response: true
+    allow_static_sam_build: true
+
+denied_sources:
+  - source_id: medqa
+    reason: benchmark/evaluation dataset
+  - source_id: pubmedqa
+    reason: benchmark/evaluation dataset
+  - source_id: medmcqa
+    reason: benchmark/evaluation dataset
+  - source_id: mmlu_medical
+    reason: benchmark/evaluation dataset
+  - source_id: finqa
+    reason: benchmark/evaluation dataset
+  - source_id: tatqa
+    reason: benchmark/evaluation dataset
+  - source_id: convfinqa
+    reason: benchmark/evaluation dataset
+  - source_id: financebench
+    reason: benchmark/evaluation dataset

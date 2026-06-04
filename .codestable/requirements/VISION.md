@@ -5,10 +5,11 @@
 ## current（系统正在满足的能力）
 
 - [evaluation-vmiss-diagnosis](evaluation-vmiss-diagnosis.md) — 在自己数据集上对比推测解码策略的真实加速度，并暴露 draft 模型的词表盲点
+- [sam-eagle3-tree-fusion](sam-eagle3-tree-fusion.md) — 同时验证 SAM 检索候选和 EAGLE3 draft tree，让推测解码更容易吃到长接受段
 
 ## draft（用户有这个需要，系统还没实现）
 
-（暂无）
+- [static-sam-offline-corpus](static-sam-offline-corpus.md) — 用可信的垂直领域数据复现 Static SAM 数据库
 
 ## outdated（曾经满足过，现已移除或不再维护）
 

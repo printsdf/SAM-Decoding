@@ -325,6 +325,12 @@ class SamdModel(nn.Module):
             if decode_tokens >= generation_config.max_new_tokens:
                 break
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
+        fusion_summary = self.draft.fusion_summary()
+        if fusion_summary is not None and fusion_summary["steps"] > 0:
+            print(
+                "{}_stats:".format(fusion_summary.get("mode", "tree_fusion")),
+                json.dumps(fusion_summary, sort_keys=True),
+            )
         return Outputs(
             input_ids_list,
             decode_tokens,

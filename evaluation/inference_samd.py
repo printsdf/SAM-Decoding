@@ -140,6 +140,25 @@ if __name__ == "__main__":
         default=None
     )
     parser.add_argument("--tree_method", type=str, default="eagle2")
+    parser.add_argument(
+        "--tree_fusion",
+        type=str,
+        default="none",
+        choices=[
+            "none",
+            "sam_sequence_graft",
+            "sam_tree_union_prune",
+            "eagle_prefix_sam_expand",
+        ],
+    )
+    parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
+    parser.add_argument("--sam_tree_top_k", type=int, default=4)
+    parser.add_argument("--sam_tree_alpha", type=float, default=4.0)
+    parser.add_argument("--sam_tree_max_depth", type=int, default=6)
+    parser.add_argument("--sam_prefix_max_added_nodes", type=int, default=4)
+    parser.add_argument("--sam_prefix_top_k", type=int, default=2)
+    parser.add_argument("--sam_prefix_min_depth", type=int, default=1)
+    parser.add_argument("--sam_prefix_max_depth", type=int, default=4)
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
     parser.add_argument("--attn_implementation", type=str, default="sdpa")
     parser.add_argument(
@@ -166,6 +185,15 @@ if __name__ == "__main__":
     
     print("len_bias:", args.samd_len_bias)
     print("len_threshold:", args.samd_len_threshold)
+    print("tree_fusion:", args.tree_fusion)
+    print("sam_tree_max_nodes:", args.sam_tree_max_nodes)
+    print("sam_tree_top_k:", args.sam_tree_top_k)
+    print("sam_tree_alpha:", args.sam_tree_alpha)
+    print("sam_tree_max_depth:", args.sam_tree_max_depth)
+    print("sam_prefix_max_added_nodes:", args.sam_prefix_max_added_nodes)
+    print("sam_prefix_top_k:", args.sam_prefix_top_k)
+    print("sam_prefix_min_depth:", args.sam_prefix_min_depth)
+    print("sam_prefix_max_depth:", args.sam_prefix_max_depth)
     
     if args.num_gpus_total == 1:
         device_map = "cuda"
@@ -193,10 +221,19 @@ if __name__ == "__main__":
     samd_config = SamdConfig(
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
+        tree_fusion=args.tree_fusion,
         tree_model_path=args.tree_model_path,
         len_threshold=args.samd_len_threshold,
         len_bias=args.samd_len_bias,
         tree_path=args.samd_tree_path,
+        sam_tree_max_nodes=args.sam_tree_max_nodes,
+        sam_tree_top_k=args.sam_tree_top_k,
+        sam_tree_alpha=args.sam_tree_alpha,
+        sam_tree_max_depth=args.sam_tree_max_depth,
+        sam_prefix_max_added_nodes=args.sam_prefix_max_added_nodes,
+        sam_prefix_top_k=args.sam_prefix_top_k,
+        sam_prefix_min_depth=args.sam_prefix_min_depth,
+        sam_prefix_max_depth=args.sam_prefix_max_depth,
     )
     draft = DraftModel(
         samd_config, 

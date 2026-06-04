@@ -2,6 +2,7 @@ import os
 import json
 import torch
 from dataclasses import dataclass, field
+from numbers import Real
 from typing import Optional, Union, List, Literal, Dict, Any
 from enum import Enum
 
@@ -21,12 +22,77 @@ class SamdConfig:
     tree_method: Literal["token_recycle", "eagle", "eagle2", "eagle3"] = field(
         default="token_recycle"
     )
+    tree_fusion: Literal[
+        "none",
+        "sam_sequence_graft",
+        "sam_tree_union_prune",
+        "eagle_prefix_sam_expand",
+    ] = field(default="none")
+    sam_tree_max_nodes: int = field(default=16)
+    sam_tree_top_k: int = field(default=4)
+    sam_tree_alpha: float = field(default=4.0)
+    sam_tree_max_depth: Optional[int] = field(default=6)
+    sam_prefix_max_added_nodes: int = field(default=4)
+    sam_prefix_top_k: int = field(default=2)
+    sam_prefix_min_depth: int = field(default=1)
+    sam_prefix_max_depth: Optional[int] = field(default=4)
     tree_model_path: Optional[str] = field(default=None)
     tree_path: Optional[str] = field(default=None)
     tree: Optional[List[List[int]]] = field(default=None)
     tree_config: Optional[Dict[str, Any]] = field(default=None)
 
     def __post_init__(self):
+        if self.tree_fusion not in (
+            "none",
+            "sam_sequence_graft",
+            "sam_tree_union_prune",
+            "eagle_prefix_sam_expand",
+        ):
+            raise ValueError("unsupported tree_fusion: {}".format(self.tree_fusion))
+        if self.tree_fusion in (
+            "sam_sequence_graft",
+            "sam_tree_union_prune",
+            "eagle_prefix_sam_expand",
+        ) and self.tree_method != "eagle3":
+            raise ValueError(
+                'tree_fusion="{}" only supports tree_method="eagle3"'.format(self.tree_fusion)
+            )
+        if not isinstance(self.sam_tree_max_nodes, int) or isinstance(self.sam_tree_max_nodes, bool):
+            raise ValueError("sam_tree_max_nodes must be a positive integer")
+        if self.sam_tree_max_nodes <= 0:
+            raise ValueError("sam_tree_max_nodes must be a positive integer")
+        if not isinstance(self.sam_tree_top_k, int) or isinstance(self.sam_tree_top_k, bool):
+            raise ValueError("sam_tree_top_k must be a positive integer")
+        if self.sam_tree_top_k <= 0:
+            raise ValueError("sam_tree_top_k must be a positive integer")
+        if not isinstance(self.sam_tree_alpha, Real) or isinstance(self.sam_tree_alpha, bool):
+            raise ValueError("sam_tree_alpha must be a positive number")
+        if self.sam_tree_alpha <= 0:
+            raise ValueError("sam_tree_alpha must be a positive number")
+        if self.sam_tree_max_depth is not None:
+            if not isinstance(self.sam_tree_max_depth, int) or isinstance(self.sam_tree_max_depth, bool):
+                raise ValueError("sam_tree_max_depth must be None or a positive integer")
+            if self.sam_tree_max_depth <= 0:
+                raise ValueError("sam_tree_max_depth must be None or a positive integer")
+        if not isinstance(self.sam_prefix_max_added_nodes, int) or isinstance(self.sam_prefix_max_added_nodes, bool):
+            raise ValueError("sam_prefix_max_added_nodes must be a non-negative integer")
+        if self.sam_prefix_max_added_nodes < 0:
+            raise ValueError("sam_prefix_max_added_nodes must be a non-negative integer")
+        if not isinstance(self.sam_prefix_top_k, int) or isinstance(self.sam_prefix_top_k, bool):
+            raise ValueError("sam_prefix_top_k must be a positive integer")
+        if self.sam_prefix_top_k <= 0:
+            raise ValueError("sam_prefix_top_k must be a positive integer")
+        if not isinstance(self.sam_prefix_min_depth, int) or isinstance(self.sam_prefix_min_depth, bool):
+            raise ValueError("sam_prefix_min_depth must be a non-negative integer")
+        if self.sam_prefix_min_depth < 0:
+            raise ValueError("sam_prefix_min_depth must be a non-negative integer")
+        if self.sam_prefix_max_depth is not None:
+            if not isinstance(self.sam_prefix_max_depth, int) or isinstance(self.sam_prefix_max_depth, bool):
+                raise ValueError("sam_prefix_max_depth must be None or a positive integer")
+            if self.sam_prefix_max_depth <= 0:
+                raise ValueError("sam_prefix_max_depth must be None or a positive integer")
+            if self.sam_prefix_max_depth < self.sam_prefix_min_depth:
+                raise ValueError("sam_prefix_max_depth must be >= sam_prefix_min_depth")
         if self.tree is None:
             if self.tree_method == "token_recycle":
                 self.tree = load_token_recycle(self.tree_path)

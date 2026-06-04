@@ -124,6 +124,12 @@ class StaticSAM:
             pred_ids.extend([0] * (self.n_predicts - len(pred_ids)))
         return pred_ids
 
+    def gen_draft_raw(self, index: int, start_token: int, max_len: int):
+        # Keep the same ancestor behavior as gen_draft(): StaticSAM currently
+        # uses the exact lookup state rather than climbing to an ancestor.
+        endpos = self.states[index].min_endpos
+        return [start_token] + self.input_ids[endpos + 1:endpos + max_len]
+
 
 class NullStaticSAM(StaticSAM):
     
@@ -135,3 +141,6 @@ class NullStaticSAM(StaticSAM):
     
     def gen_draft(self, index, start_token):
         return -1, -1
+
+    def gen_draft_raw(self, index, start_token, max_len):
+        return [start_token]
