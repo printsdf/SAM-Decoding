@@ -10,7 +10,8 @@ Direct port of ../EAGLE/eagle/model/cnets.py:Model with these adaptations:
   unexpected keys raise a warning print.
 - Loading prints one diagnostic line containing ``missing_keys`` /
   ``unexpected_keys`` / ``draft_vocab_size`` / ``vocab_size`` / ``hidden_size`` /
-  captured layer indices, per design 2.2 observability constraint.
+  tree generation parameters / captured layer indices, per design 2.2
+  observability constraint.
 
 Author note: building blocks live in eagle3_utils.py (LlamaAttention / MLP /
 RMSNorm / LlamaDecoderLayeremb) — those are the EAGLE3-specific structure
@@ -71,7 +72,7 @@ class Eagle3Model(nn.Module):
         self.logsoftmax = nn.LogSoftmax(dim=-1)
 
         d2t = torch.zeros((config.draft_vocab_size,), dtype=torch.long)
-        t2d = torch.zeros((config.vocab_size,), dtype=torch.bool)
+        t2d = torch.ones((config.vocab_size,), dtype=torch.bool)
         self.register_buffer("d2t", d2t)
         self.register_buffer("t2d", t2d)
 
@@ -109,9 +110,11 @@ class Eagle3Model(nn.Module):
         unexpected = list(load_result.unexpected_keys)
         print(
             "eagle3 load: missing_keys={}, unexpected_keys={}, "
-            "draft_vocab_size={}, vocab_size={}, hidden_size={}, {}".format(
+            "draft_vocab_size={}, vocab_size={}, hidden_size={}, "
+            "total_token={}, depth={}, top_k={}, {}".format(
                 missing, unexpected,
                 self.config.draft_vocab_size, self.vocab_size, self.hidden_size,
+                self.total_tokens + 1, self.depth, self.top_k,
                 CAPTURED_LAYER_INDICES_DOC,
             )
         )
@@ -120,7 +123,8 @@ class Eagle3Model(nn.Module):
         allowed_missing = {"embed_tokens.weight"}  # Eagle3 integration class copies from base lm
         if self.config.vocab_size == self.config.draft_vocab_size:
             # When draft vocab matches base vocab, official checkpoints drop
-            # d2t/t2d (no remapping needed); the zero-initialized buffers are correct.
+            # d2t/t2d (no remapping needed); d2t zeros and t2d all-True preserve
+            # identity reachability for diagnosis and any later sidecar checks.
             allowed_missing.update({"d2t", "t2d"})
         real_missing = [k for k in missing if k not in allowed_missing]
         if real_missing:
@@ -244,6 +248,7 @@ class Eagle3Model(nn.Module):
         sample_token = input_ids[:, -1]
 
         scores_list = []
+        logprobs_list = []
         parents_list = []
         ss_token = []
 
@@ -279,6 +284,7 @@ class Eagle3Model(nn.Module):
         topk_index, topk_p = top.indices, top.values
         scores = topk_p[0]
         scores_list.append(scores[None])
+        logprobs_list.append(scores[None])
         parents_list.append(torch.zeros(1, dtype=torch.long, device=scores.device))
         if self.config.vocab_size == self.config.draft_vocab_size:
             ss_token.append(topk_index)
@@ -331,9 +337,11 @@ class Eagle3Model(nn.Module):
                 input_ids = input_ids + self.d2t[input_ids]
                 ss_token.append(topk_index + self.d2t[topk_index])
             scores_list.append(cu_scores)
+            logprobs_list.append(topk_p)
             tree_mask = torch.cat((tree_mask[:, :, out_ids], self.tree_mask_init), dim=3)
 
         scores_list = torch.cat(scores_list, dim=0).view(-1)
+        logprobs_list = torch.cat(logprobs_list, dim=0).view(-1)
         ss_token_list = torch.cat(ss_token, dim=0).view(-1)
         top_scores = torch.topk(scores_list, total_tokens, dim=-1)
         top_scores_index = top_scores.indices
@@ -341,6 +349,14 @@ class Eagle3Model(nn.Module):
 
         draft_tokens = ss_token_list[top_scores_index]
         draft_tokens = torch.cat((sample_token, draft_tokens), dim=0)
+        draft_logprobs = logprobs_list[top_scores_index]
+        draft_logprobs = torch.cat(
+            (
+                torch.zeros(1, dtype=draft_logprobs.dtype, device=draft_logprobs.device),
+                draft_logprobs,
+            ),
+            dim=0,
+        )
 
         draft_parents = torch.cat(parents_list, dim=0)[top_scores_index // top_k].long()
         mask_index = torch.searchsorted(top_scores_index, draft_parents - 1, right=False)
@@ -357,8 +373,9 @@ class Eagle3Model(nn.Module):
 
         tree_mask = tree_mask.float()[None, None]
         draft_tokens = draft_tokens[None]
+        draft_logprobs = draft_logprobs[None]
 
-        del parents_list, scores_list, ss_token, ss_token_list, draft_parents
+        del parents_list, scores_list, logprobs_list, ss_token, ss_token_list, draft_parents
 
         max_depth = torch.max(tree_position_ids) + 1
         noleaf_index = torch.unique(mask_index).tolist()
@@ -395,4 +412,4 @@ class Eagle3Model(nn.Module):
         del mask_index, mask_index_list, noleaf_index, noleaf_num, leaf_num, max_depth, rid
         tree_position_ids = tree_position_ids[None].to(hidden_states.device)
 
-        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids
+        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, draft_logprobs

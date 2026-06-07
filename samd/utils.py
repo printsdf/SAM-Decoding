@@ -15,6 +15,24 @@ from transformers.generation.logits_process import (
 from profile_utils import profile_decorator
 from .samd_config import SamdConfig
 from .draft import DraftModel, Candidates, CandidateType    
+from .fusion.naive_fusion import fuse_eagle_sam_naive
+
+
+def _extract_candidate_tokens_eagle(pred_ids, buffers, device: torch.device) -> torch.Tensor:
+    retrieve_indices = buffers.get("tree_retrieve_indices")
+    if isinstance(pred_ids, torch.Tensor):
+        tokens = pred_ids.to(device=device, dtype=torch.long).view(-1)
+    else:
+        tokens = torch.tensor(pred_ids, dtype=torch.long, device=device)
+    tokens_ext = torch.cat([tokens, tokens.new_zeros(1)])
+    if retrieve_indices is None:
+        return tokens.unsqueeze(0)
+    if isinstance(retrieve_indices, torch.Tensor):
+        retrieve_indices = retrieve_indices.to(device=device, dtype=torch.long)
+    else:
+        retrieve_indices = torch.tensor(retrieve_indices, dtype=torch.long, device=device)
+    return tokens_ext[retrieve_indices]
+
 
 class OptionalTensor:
     
@@ -87,6 +105,106 @@ def gen_candidates(
         start_token = torch.argmax(sample_p, dim=-1).item()
     else:
         start_token = torch.multinomial(sample_p, 1).item()
+
+    if samd_config.fusion_mode == "naive":
+        index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
+        index_static, match_static_raw = draft.sam_static.lookup(start_token)
+        match_static = match_static_raw - draft.len_bias
+        best_match = max(match_dyn, match_static)
+        samd_len_threshold = getattr(samd_config, "samd_len_threshold", None)
+        if samd_len_threshold is None:
+            samd_len_threshold = samd_config.len_threshold
+
+        if best_match < samd_len_threshold:
+            eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
+            eagle_nonroot_nodes = max(len(eagle_pred_ids) - 1, 0)
+            draft.record_naive_fusion({
+                "mode": "naive",
+                "eagle_nodes": eagle_nonroot_nodes,
+                "sam_nodes": 0,
+                "merged_nodes": eagle_nonroot_nodes,
+                "final_nodes": eagle_nonroot_nodes,
+                "dedup_count": 0,
+                "both_proposed_count": 0,
+                "truncate_count": 0,
+                "truncated_count": 0,
+                "sam_skipped": True,
+                "sam_match_quality": int(best_match),
+                "threshold": samd_len_threshold,
+                "sam_contribution": 0,
+                "eagle_contribution": eagle_nonroot_nodes,
+                "both_contribution": 0,
+                "sam_avg_match_length": float(best_match),
+                "sam_max_match_length": max(int(best_match), 0),
+                "selected_eagle": eagle_nonroot_nodes,
+                "selected_sam": 0,
+                "selected_both": 0,
+                "node_sources": ["root"] + ["eagle"] * eagle_nonroot_nodes,
+                "sam_match_length": max(int(best_match), 0),
+            })
+            return Candidates(
+                type=CandidateType.tree,
+                tokens=torch.tensor([eagle_pred_ids], dtype=torch.long, device=device),
+                candidate_tokens=_extract_candidate_tokens_eagle(
+                    eagle_pred_ids,
+                    eagle_buffers,
+                    device,
+                ),
+                buffers_kwargs=eagle_buffers,
+            )
+
+        eagle_tokens, eagle_buffers, eagle_logprobs = draft.tree_model.gen_draft(
+            start_token,
+            return_logprobs=True,
+        )
+        eagle_tree = {
+            "tokens": eagle_tokens,
+            "logprobs": eagle_logprobs,
+            "tree_attn_mask": eagle_buffers["tree_attn_mask"],
+            "tree_position_ids": eagle_buffers["tree_position_ids"],
+            "tree_retrieve_indices": eagle_buffers["tree_retrieve_indices"],
+        }
+
+        if match_dyn >= match_static:
+            sam_candidates = draft.sam_dyn.gen_draft_raw(
+                index_dyn,
+                start_token,
+                samd_config.n_predicts,
+            )
+            sam_match_length = match_dyn
+        else:
+            sam_candidates = draft.sam_static.gen_draft_raw(
+                index_static,
+                start_token,
+                samd_config.n_predicts,
+            )
+            sam_match_length = max(match_static, 0)
+
+        fused_tree = fuse_eagle_sam_naive(
+            eagle_tree=eagle_tree,
+            sam_candidates=sam_candidates,
+            start_token=start_token,
+            config=samd_config.fusion_config,
+            sam_match_length=sam_match_length,
+            eagle_logprobs=eagle_logprobs,
+        )
+        fused_tree.metadata.setdefault("sam_skipped", False)
+        draft.record_naive_fusion(fused_tree.metadata)
+        tokens = fused_tree.tokens.unsqueeze(0)
+        tokens_ext = torch.cat(
+            [fused_tree.tokens, torch.zeros(1, dtype=torch.long, device=fused_tree.tokens.device)]
+        )
+        candidate_tokens = tokens_ext[fused_tree.retrieve_indices]
+        return Candidates(
+            CandidateType.tree,
+            tokens,
+            candidate_tokens,
+            fused_tree.buffers_kwargs,
+        )
+
+    if samd_config.fusion_mode != "none":
+        raise ValueError("unsupported fusion_mode: {}".format(samd_config.fusion_mode))
+
     candidate_type, tokens, buffers_kwargs = draft.lookup(start_token)
     tree_retrieve_indices = buffers_kwargs.get("tree_retrieve_indices", tree_retrieve_indices)
     if candidate_type == CandidateType.sequence:
