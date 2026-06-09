@@ -64,3 +64,95 @@ The overhead is small, but it can bias low-margin speedup comparisons.
   with warnings, but warn when an entire file lacks traces.
 * Tables should report mean accept length, tree steps, and tree-step V_miss
   rate. Speedup tables should come from trace-OFF phase1.
+
+## Scenario: Naive Fusion Profiling Gate
+
+### 1. Scope / Trigger
+
+Use this gate before deciding whether the naive logprob fusion path needs local
+optimization or whether work can proceed to payoff-aware fusion. It applies to
+`fusion_mode="naive"` with `tree_method="eagle3"`, `tree_fusion="none"`, and
+`samd_len_threshold=5`.
+
+### 2. Signatures
+
+Run the profiler directly:
+
+```bash
+python scripts/profile_naive_fusion.py \
+  --model-path "${MODEL_PATH}" \
+  --tree-model-path "${TREE_MODEL_PATH}" \
+  --question-begin 0 \
+  --num-questions 10 \
+  --max-cache-len 4096
+```
+
+Or use the cloudspace runner:
+
+```bash
+bash scripts/run_profile.sh
+```
+
+The runner reads `MODEL_PATH`, `TREE_MODEL_PATH`, optional `SAM_PATH`,
+`BENCH_NAME`, `PROFILE_QUESTION_BEGIN`, `PROFILE_NUM_QUESTIONS`,
+`MAX_NEW_TOKENS`, `MAX_CACHE_LEN`, `DTYPE`, `CUDA_VISIBLE_DEVICES`, and optional
+`FEISHU_WEBHOOK_URL` from `.env` or the shell.
+
+### 3. Contracts
+
+The profiler must execute `evaluation.inference_samd` under `cProfile` with:
+
+* `--tree_method eagle3`
+* `--tree_fusion none`
+* `--fusion_mode naive`
+* `--samd_len_threshold 5`
+* `--max_cache_len <= 4096` unless the caller explicitly allows a larger cache
+
+It writes profile stats, answers, and a text report under
+`evaluation/data/<bench>/profile_naive_fusion/` by default.
+
+### 4. Validation & Error Matrix
+
+* Missing `MODEL_PATH` or `TREE_MODEL_PATH` when running a profile ->
+  argument error before model loading.
+* `question_end <= question_begin` -> argument error.
+* `max_cache_len > 4096` without an explicit large-cache override -> argument
+  error to prevent cloudspace OOM.
+* `--skip-run` with a missing stats file -> error instead of an empty report.
+
+### 5. Good/Base/Bad Cases
+
+* Good: profile 10 MT-Bench questions on the remote model host, inspect the
+  report, and decide from the printed bottleneck percentages.
+* Base: run `--dry-run` locally to inspect the exact `cProfile` command without
+  importing model dependencies.
+* Bad: profiling trace-ON diagnosis runs or omitting `--max_cache_len`, because
+  this can bias runtime or allocate a huge KV cache.
+
+### 6. Tests Required
+
+* Compile `scripts/profile_naive_fusion.py`.
+* Syntax-check `scripts/run_profile.sh` with `bash -n`.
+* Run the profiler with `--dry-run` and verify the command includes
+  `--fusion_mode naive`, `--tree_fusion none`, `--samd_len_threshold 5`, the
+  requested question range, and `--max_cache_len`.
+* Run the real profile only on the remote model environment.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```bash
+python -m evaluation.inference_samd --fusion_mode naive
+```
+
+Correct:
+
+```bash
+python -m cProfile -o naive.stats -m evaluation.inference_samd \
+  --tree_method eagle3 \
+  --tree_fusion none \
+  --fusion_mode naive \
+  --samd_len_threshold 5 \
+  --max_cache_len 4096
+```
