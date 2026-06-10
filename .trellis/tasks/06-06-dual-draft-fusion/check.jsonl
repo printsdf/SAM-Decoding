@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index for quality review scope."}
+{"file": ".trellis/spec/backend/tree-fusion.md", "reason": "Review fusion contract, logprob compatibility, source metadata, and required tests."}
+{"file": ".trellis/spec/backend/eagle3-integration.md", "reason": "Review EAGLE3-specific state, vocab, and budget invariants."}
+{"file": ".trellis/spec/backend/evaluation-protocols.md", "reason": "Review benchmark and trace protocol before accepting result claims."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General test and review expectations for Python research code changes."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/README.md", "reason": "Task index and latest handoff context."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/prd.md", "reason": "Current task requirements, decisions, and open questions."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-09-mtbench-naive-logprob-profile.md", "reason": "Latest confirmed Phase 3.1 MT-Bench results and reproducibility caveats."}

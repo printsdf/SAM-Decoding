@@ -34,7 +34,8 @@ evaluation/model/            Vendored or legacy baseline model implementations
 scripts/                     Shell entry points for smoke tests and benchmark batches
 tools/                       Offline Static SAM corpus/artifact tools
 tests/                       Pytest and executable integration checks
-docs/                        Usage guides and experiment specs/results
+docs/                        Usage guides and cross-task experiment specs/results
+.trellis/tasks/<task>/docs/   Task-local research specs, plans, results, and archives
 ```
 
 ## Module Organization
@@ -60,8 +61,11 @@ docs/                        Usage guides and experiment specs/results
 * `tree_fusion` selects candidate-combination strategy (`none`,
   `sam_sequence_graft`, `sam_tree_union_prune`, `eagle_prefix_sam_expand`).
 * Do not encode fusion variants as new `tree_method` values.
-* Experiment docs should stay under `docs/experiments/specs/` and
-  `docs/experiments/results/` with date-prefixed filenames.
+* Cross-task experiment docs stay under `docs/experiments/` with date-prefixed
+  filenames. Task-specific experiment docs belong under
+  `.trellis/tasks/<task>/docs/experiments/{specs,plans,results}/`; keep the
+  task root limited to the current `README.md`, `prd.md`, Trellis metadata, and
+  task-local scripts.
 
 ## Examples
 
