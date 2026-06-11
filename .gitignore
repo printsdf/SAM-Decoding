@@ -8,3 +8,4 @@ rsync.txt
 misc
 evaluation/model/pia
 .env
+.worktrees/
