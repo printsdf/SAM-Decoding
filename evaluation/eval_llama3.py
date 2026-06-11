@@ -52,6 +52,8 @@ def run_eval(
     chunk_size = len(questions) // (num_gpus_total // num_gpus_per_model)  # // 2
     ans_handles = []
     for i in range(0, len(questions), chunk_size):
+        chunk_kwargs = dict(kwargs)
+        chunk_kwargs["_question_index_offset"] = int(question_begin) + int(i)
         ans_handles.append(
             get_answers_func(
                 model,
@@ -62,7 +64,7 @@ def run_eval(
                 answer_file,
                 max_new_tokens,
                 num_choices,
-                **kwargs,
+                **chunk_kwargs,
             )
         )
 
@@ -86,6 +88,7 @@ def get_model_answers(
     # collection; pop it out so it is not forwarded into forward_func, which
     # receives the trace list via the explicit ``diagnosis_trace_out`` kwarg.
     collect_diagnosis_trace = kwargs.pop("collect_diagnosis_trace", False)
+    question_index_offset = int(kwargs.pop("_question_index_offset", 0))
 
     model.eval()
     print('Check model training state:', model.training)
@@ -173,10 +176,13 @@ def get_model_answers(
                 "role": "assistant",
                 "content": output
             })
+    fusion_profiler = kwargs.get("fusion_profiler")
+    if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+        fusion_profiler.reset()
     print('Warmup done')
 
     accept_lengths_tree = []
-    for question in tqdm(questions):
+    for local_question_index, question in enumerate(tqdm(questions)):
 
         choices = []
         for i in range(num_choices):
@@ -215,6 +221,14 @@ def get_model_answers(
                 total_time = 0.0
                 accept_length_tree: list = []
                 try:
+                    if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+                        fusion_profiler.set_step_context({
+                            "question_id": question.get("question_id"),
+                            "question_index": question_index_offset + local_question_index,
+                            "category": question.get("category"),
+                            "choice_index": int(i),
+                            "turn_index": int(j),
+                        })
                     torch.cuda.synchronize()
                     start_time = time.time()
                     output_ids, new_token, step, accept_length_tree = forward_func(
@@ -274,6 +288,8 @@ def get_model_answers(
                     "role": "assistant",
                     "content": output
                 })
+            if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+                fusion_profiler.clear_step_context()
             # torch.cuda.empty_cache()
             choice_dict = {
                 "index": i,
@@ -314,4 +330,3 @@ def reorg_answer_file(answer_file):
     with open(answer_file, "w") as fout:
         for qid in qids:
             fout.write(answers[qid])
-

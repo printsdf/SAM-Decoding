@@ -50,6 +50,8 @@ def run_eval(
     chunk_size = len(questions) // (num_gpus_total // num_gpus_per_model)  # // 2
     ans_handles = []
     for i in range(0, len(questions), chunk_size):
+        chunk_kwargs = dict(kwargs)
+        chunk_kwargs["_question_index_offset"] = int(question_begin) + int(i)
         ans_handles.append(
             get_answers_func(
                 model,
@@ -60,7 +62,7 @@ def run_eval(
                 answer_file,
                 max_new_tokens,
                 num_choices,
-                **kwargs,
+                **chunk_kwargs,
             )
         )
 
@@ -80,6 +82,7 @@ def get_model_answers(
         num_choices,
         **kwargs,
 ):
+    question_index_offset = int(kwargs.pop("_question_index_offset", 0))
 
     model.eval()
     print('Check model training state:', model.training)
@@ -153,10 +156,13 @@ def get_model_answers(
             new_tokens.append(int(new_token))
             wall_time.append(total_time)
             conv.messages[-1][-1] = output        
+    fusion_profiler = kwargs.get("fusion_profiler")
+    if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+        fusion_profiler.reset()
     print('Warmup done')
 
     accept_lengths_tree = []
-    for question in tqdm(questions):
+    for local_question_index, question in enumerate(tqdm(questions)):
 
         choices = []
         for i in range(num_choices):
@@ -176,6 +182,14 @@ def get_model_answers(
                 inputs = tokenizer([prompt], return_tensors="pt").to("cuda")
                 input_ids = inputs.input_ids
                 try:
+                    if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+                        fusion_profiler.set_step_context({
+                            "question_id": question.get("question_id"),
+                            "question_index": question_index_offset + local_question_index,
+                            "category": question.get("category"),
+                            "choice_index": int(i),
+                            "turn_index": int(j),
+                        })
                     torch.cuda.synchronize()
                     start_time = time.time()
                     output_ids, new_token, step, accept_length_tree = forward_func(
@@ -225,6 +239,8 @@ def get_model_answers(
                 wall_time.append(total_time)
                 cur_accept_lengths_tree.extend(accept_length_tree)
                 conv.messages[-1][-1] = output
+            if fusion_profiler is not None and getattr(fusion_profiler, "enabled", False):
+                fusion_profiler.clear_step_context()
             # torch.cuda.empty_cache()
             choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
                             "accept_lengths": cur_accept_lengths_tree})
@@ -256,4 +272,3 @@ def reorg_answer_file(answer_file):
     with open(answer_file, "w") as fout:
         for qid in qids:
             fout.write(answers[qid])
-

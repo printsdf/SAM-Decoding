@@ -28,6 +28,8 @@ def test_oracle_analysis_loads_profiler_json_and_counts_root_mat(tmp_path):
                         ],
                         "acceptance_path": [11],
                         "stats": {"eagle_nodes": 1, "sam_nodes": 1},
+                        "metadata": {"question_index": 0},
+                        "first_rejected_depth": None,
                     }
                 ]
             }
@@ -48,3 +50,51 @@ def test_oracle_analysis_loads_profiler_json_and_counts_root_mat(tmp_path):
     assert by_method["eagle3_only"].mat == 2.0
     assert by_method["sam_sequence_graft"].mat == 2.0
     assert by_method["perfect"].oracle_gap == 0.0
+
+
+def test_oracle_analysis_preserves_enriched_boundary_fields(tmp_path):
+    trace_path = tmp_path / "profile.json"
+    trace_path.write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {
+                        "metadata": {"question_index": 7},
+                        "candidates": [
+                            {
+                                "source": "eagle",
+                                "token": 11,
+                                "depth": 1,
+                                "score": -0.2,
+                                "accepted": True,
+                                "token_path": [10, 11],
+                                "tree_index": 1,
+                                "parent_index": 0,
+                                "local_logprob": -0.2,
+                                "rank_among_siblings": 1,
+                                "sibling_margin": 0.5,
+                                "cumulative_path_logprob": -0.2,
+                            }
+                        ],
+                        "acceptance_path": [11, 99],
+                        "first_rejected_depth": 2,
+                        "first_rejected_parent_index": 1,
+                        "first_rejected_parent_path": [11],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    steps = load_decode_traces([trace_path])
+
+    assert steps[0].metadata["question_index"] == 7
+    assert steps[0].has_rejection_boundary_label is True
+    assert steps[0].first_rejected_depth == 2
+    assert steps[0].first_rejected_parent_index == 1
+    assert steps[0].first_rejected_parent_path == (11,)
+    assert steps[0].candidates[0].tree_index == 1
+    assert steps[0].candidates[0].parent_index == 0
+    assert steps[0].candidates[0].sibling_margin == 0.5

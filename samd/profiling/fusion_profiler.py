@@ -80,6 +80,7 @@ class FusionProfiler:
         self._steps: List[Dict[str, Any]] = []
         self._totals: Dict[str, float] = {phase: 0.0 for phase in FUSION_PROFILE_PHASES}
         self._current_step: Optional[Dict[str, Any]] = None
+        self._step_context: Dict[str, Any] = {}
         self._started_at: Optional[float] = None
         self._finished_at: Optional[float] = None
         self._memory_start = 0
@@ -113,6 +114,7 @@ class FusionProfiler:
         self._steps = []
         self._totals = {phase: 0.0 for phase in FUSION_PROFILE_PHASES}
         self._current_step = None
+        self._step_context = {}
         self._started_at = None
         self._finished_at = None
         self._memory_start = 0
@@ -148,10 +150,12 @@ class FusionProfiler:
         now = time.perf_counter()
         memory_start = _cuda_memory_allocated()
         self._peak_memory = max(self._peak_memory, memory_start)
+        step_metadata = dict(self._step_context)
+        step_metadata.update(metadata or {})
         self._current_step = {
             "step": len(self._steps),
             "timings": {phase: 0.0 for phase in FUSION_PROFILE_PHASES},
-            "metadata": _json_safe(metadata or {}),
+            "metadata": _json_safe(step_metadata),
             "memory_start": memory_start,
             "_start": now,
         }
@@ -205,11 +209,23 @@ class FusionProfiler:
             return
         self._current_step["metadata"].update(_json_safe(metadata))
 
+    def set_step_context(self, metadata: Dict[str, Any]) -> None:
+        """Set metadata copied into every subsequently started step."""
+        if not self.enabled:
+            return
+        self._step_context = _json_safe(metadata or {})
+
+    def clear_step_context(self) -> None:
+        if not self.enabled:
+            return
+        self._step_context = {}
+
     def add_step_trace(
         self,
         candidates: Optional[List[Dict[str, Any]]] = None,
         acceptance_path: Optional[List[int]] = None,
         stats: Optional[Dict[str, Any]] = None,
+        labels: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Attach oracle-analysis trace fields to the active decode step."""
         if not self.enabled or self._current_step is None:
@@ -220,6 +236,9 @@ class FusionProfiler:
             self._current_step["acceptance_path"] = _json_safe(acceptance_path)
         if stats is not None:
             self._current_step["stats"] = _json_safe(stats)
+        if labels is not None:
+            for key, value in labels.items():
+                self._current_step[str(key)] = _json_safe(value)
 
     def summary(self) -> ProfileStats:
         steps = len(self._steps)

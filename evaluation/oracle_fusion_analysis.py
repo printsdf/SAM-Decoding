@@ -19,9 +19,13 @@ import argparse
 import json
 import math
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 @dataclass(frozen=True)
@@ -31,18 +35,55 @@ class OracleCandidate:
     depth: int
     score: float
     accepted: bool
+    path: Tuple[int, ...]
+    token_path: Tuple[int, ...]
+    tree_index: Optional[int]
+    parent_index: Optional[int] = None
+    local_logprob: Optional[float] = None
+    rank_among_siblings: Optional[int] = None
+    sibling_margin: Optional[float] = None
+    cumulative_path_logprob: Optional[float] = None
+    sam_match_length: Optional[int] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OracleCandidate":
         source = str(data.get("source", ""))
         if source not in ("eagle", "sam"):
             raise ValueError("candidate source must be 'eagle' or 'sam': {}".format(source))
+        path = _int_tuple(data.get("path", []))
+        token_path = _int_tuple(data.get("token_path", []))
+        if "token" in data:
+            token = int(data["token"])
+        elif token_path:
+            token = int(token_path[-1])
+        else:
+            raise KeyError("token")
+        if not path and len(token_path) > 1:
+            path = token_path[:-1]
+        depth = data.get("depth")
+        if depth is None:
+            if path:
+                depth = len(path)
+            elif token_path:
+                depth = max(len(token_path) - 1, 1)
+            else:
+                depth = 1
+        tree_index = data.get("tree_index", data.get("index", data.get("tree_idx")))
         return cls(
             source=source,
-            token=int(data["token"]),
-            depth=int(data.get("depth", 1)),
+            token=token,
+            depth=int(depth),
             score=float(data.get("score", 0.0)),
-            accepted=bool(data.get("accepted", False)),
+            accepted=_bool_value(data.get("accepted", False)),
+            path=path,
+            token_path=token_path,
+            tree_index=(int(tree_index) if tree_index is not None else None),
+            parent_index=_optional_int(data.get("parent_index")),
+            local_logprob=_optional_float(data.get("local_logprob")),
+            rank_among_siblings=_optional_int(data.get("rank_among_siblings")),
+            sibling_margin=_optional_float(data.get("sibling_margin")),
+            cumulative_path_logprob=_optional_float(data.get("cumulative_path_logprob")),
+            sam_match_length=_optional_int(data.get("sam_match_length")),
         )
 
 
@@ -52,6 +93,12 @@ class DecodeStep:
     candidates: List[OracleCandidate]
     acceptance_path: List[int]
     stats: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    first_rejected_depth: Optional[int] = None
+    first_rejected_tree_index: Optional[int] = None
+    first_rejected_parent_index: Optional[int] = None
+    first_rejected_parent_path: Optional[Tuple[int, ...]] = None
+    has_rejection_boundary_label: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], fallback_step: int) -> "DecodeStep":
@@ -61,11 +108,39 @@ class DecodeStep:
         ]
         acceptance_path = [int(token) for token in data.get("acceptance_path", [])]
         stats = dict(data.get("stats", {}))
+        label_fields_present = (
+            "first_rejected_depth" in data
+            or "first_rejected_depth" in stats
+        )
+        rejected_parent_path = data.get(
+            "first_rejected_parent_path",
+            stats.get("first_rejected_parent_path"),
+        )
+        metadata = dict(data.get("metadata", {}))
+        for key in ("question_id", "question_index", "question_idx", "question_number"):
+            if key in data and key not in metadata:
+                metadata[key] = data[key]
         return cls(
             step=int(data.get("step", fallback_step)),
             candidates=candidates,
             acceptance_path=acceptance_path,
             stats=stats,
+            metadata=metadata,
+            first_rejected_depth=_optional_int(
+                data.get("first_rejected_depth", stats.get("first_rejected_depth"))
+            ),
+            first_rejected_tree_index=_optional_int(
+                data.get("first_rejected_tree_index", stats.get("first_rejected_tree_index"))
+            ),
+            first_rejected_parent_index=_optional_int(
+                data.get("first_rejected_parent_index", stats.get("first_rejected_parent_index"))
+            ),
+            first_rejected_parent_path=(
+                _int_tuple(rejected_parent_path)
+                if rejected_parent_path is not None
+                else None
+            ),
+            has_rejection_boundary_label=label_fields_present,
         )
 
 
@@ -91,6 +166,42 @@ class MethodResult:
 
 def warn(message: str) -> None:
     print("WARNING: {}".format(message), file=sys.stderr)
+
+
+def _bool_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "y")
+    return bool(value)
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _int_tuple(value: Any) -> Tuple[int, ...]:
+    if value is None:
+        return ()
+    if hasattr(value, "detach"):
+        value = value.detach().cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    flattened: List[int] = []
+    for item in value:
+        if isinstance(item, (list, tuple)):
+            flattened.extend(_int_tuple(item))
+        else:
+            flattened.append(int(item))
+    return tuple(flattened)
 
 
 def _load_json_objects(path: Path) -> List[Any]:
@@ -133,6 +244,26 @@ def _extract_step_dicts(obj: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def coerce_decode_steps(trace: Any) -> List[DecodeStep]:
+    if isinstance(trace, DecodeStep):
+        return [trace]
+    if isinstance(trace, (list, tuple)):
+        steps: List[DecodeStep] = []
+        for item in trace:
+            if isinstance(item, DecodeStep):
+                steps.append(item)
+            else:
+                for step_dict in _extract_step_dicts(item):
+                    steps.append(DecodeStep.from_dict(step_dict, fallback_step=len(steps)))
+        return steps
+    if isinstance(trace, dict) and "candidates" in trace:
+        return [DecodeStep.from_dict(trace, fallback_step=0)]
+    steps: List[DecodeStep] = []
+    for step_dict in _extract_step_dicts(trace):
+        steps.append(DecodeStep.from_dict(step_dict, fallback_step=len(steps)))
+    return steps
+
+
 def load_decode_traces(paths: Sequence[Path]) -> List[DecodeStep]:
     steps: List[DecodeStep] = []
     for path in paths:
@@ -153,13 +284,40 @@ def load_decode_traces(paths: Sequence[Path]) -> List[DecodeStep]:
     return steps
 
 
-def _candidate_truth(candidate: OracleCandidate, step: DecodeStep) -> bool:
+def candidate_nonroot_path(candidate: OracleCandidate) -> Tuple[int, ...]:
+    if candidate.depth <= 0:
+        return ()
+    if candidate.token_path:
+        if len(candidate.token_path) >= candidate.depth + 1:
+            return tuple(candidate.token_path[-candidate.depth :])
+        return tuple(candidate.token_path)
+    if candidate.path:
+        parent_nonroot = tuple(candidate.path[1:])
+        parent_depth = max(candidate.depth - 1, 0)
+        if parent_depth == 0:
+            parent_nonroot = ()
+        elif len(parent_nonroot) > parent_depth:
+            parent_nonroot = parent_nonroot[-parent_depth:]
+        return parent_nonroot + (int(candidate.token),)
+    return ()
+
+
+def candidate_matches_acceptance(candidate: OracleCandidate, step: DecodeStep) -> bool:
     if not candidate.accepted:
         return False
     if not step.acceptance_path:
         return True
+    nonroot_path = candidate_nonroot_path(candidate)
+    if nonroot_path:
+        if len(nonroot_path) > len(step.acceptance_path):
+            return False
+        return list(nonroot_path) == step.acceptance_path[: len(nonroot_path)]
     index = candidate.depth - 1
     return 0 <= index < len(step.acceptance_path) and step.acceptance_path[index] == candidate.token
+
+
+def _candidate_truth(candidate: OracleCandidate, step: DecodeStep) -> bool:
+    return candidate_matches_acceptance(candidate, step)
 
 
 def _rank_key(step: DecodeStep, candidate: OracleCandidate) -> Tuple[int, int, float, int]:
@@ -268,6 +426,7 @@ def analyze_steps(
     top_k: Optional[int],
     node_budget: Optional[int],
     gap_baseline: str,
+    depth_max_split: int = 10,
 ) -> List[MethodResult]:
     if not steps:
         return []
@@ -305,6 +464,31 @@ def analyze_steps(
                 oracle_gap=gap,
             )
         )
+    try:
+        from evaluation.oracle_depth_decoupled import DepthStratifiedOracle
+
+        depth_oracle = DepthStratifiedOracle(list(steps))
+        depth_analysis = depth_oracle.analyze(max_split=depth_max_split)
+        optimal_d_split = depth_analysis.get("optimal_d_split")
+        depth_result = depth_analysis.get("oracle_results", {}).get(
+            "depth_decoupled_d{}".format(optimal_d_split)
+        )
+        if depth_result is not None:
+            mat = float(depth_result.get("mat", 0.0))
+            nodes = float(depth_result.get("nodes", 0.0))
+            gap = (mat - baseline_mat) / baseline_mat if baseline_mat > 0 else None
+            results.append(
+                MethodResult(
+                    method="depth_decoupled",
+                    mat=mat,
+                    nodes=nodes,
+                    mat_per_node=(mat / nodes if nodes > 0 else 0.0),
+                    steps=len(steps),
+                    oracle_gap=gap,
+                )
+            )
+    except Exception as exc:
+        warn("depth_decoupled oracle skipped: {}".format(exc))
     return results
 
 
@@ -341,6 +525,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trace-file", action="append", default=[], help="Oracle trace JSON/JSONL file.")
     parser.add_argument("--top-k", type=int, default=60, help="Candidate budget for perfect/source/baseline selectors.")
     parser.add_argument("--node-budget", type=int, default=None, help="Node budget for the budgeted selector. Defaults to --top-k.")
+    parser.add_argument("--depth-max-split", type=int, default=10, help="Maximum D_split for the depth_decoupled selector.")
     parser.add_argument(
         "--gap-baseline",
         default="eagle3_only",
@@ -364,9 +549,19 @@ def main() -> None:
         top_k=args.top_k,
         node_budget=args.node_budget,
         gap_baseline=args.gap_baseline,
+        depth_max_split=args.depth_max_split,
     )
     print(render_table(results, args.gap_baseline))
     if args.output_json:
+        depth_analysis: Dict[str, Any] = {}
+        try:
+            from evaluation.oracle_depth_decoupled import DepthStratifiedOracle
+
+            depth_analysis = DepthStratifiedOracle(steps).analyze(
+                max_split=args.depth_max_split
+            )
+        except Exception as exc:
+            warn("depth_decoupled JSON payload skipped: {}".format(exc))
         output = {
             "schema_version": 1,
             "trace_files": [str(path) for path in paths],
@@ -375,7 +570,9 @@ def main() -> None:
             "node_budget": args.node_budget,
             "gap_baseline": args.gap_baseline,
             "methods": [row.to_dict() for row in results],
+            "results": [row.to_dict() for row in results],
         }
+        output.update(depth_analysis)
         output_path = Path(args.output_json)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")

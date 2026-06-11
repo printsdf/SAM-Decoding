@@ -156,3 +156,312 @@ python -m cProfile -o naive.stats -m evaluation.inference_samd \
   --samd_len_threshold 5 \
   --max_cache_len 4096
 ```
+
+## Scenario: Fusion Profiler Oracle Traces
+
+### 1. Scope / Trigger
+
+This contract applies when `--profile-fusion` is enabled and the resulting
+profile JSON is later consumed by `evaluation/oracle_fusion_analysis.py`.
+
+### 2. Signatures
+
+The evaluation CLI accepts:
+
+```text
+--profile-fusion
+--fusion-profile-file <path>
+--fusion-profile-summary-file <path>
+```
+
+The profile JSON step shape must include normal timing fields plus oracle fields:
+
+```json
+{
+  "timings": {"draft_eagle": 0.0, "draft_sam": 0.0, "fusion_logic": 0.0, "verify": 0.0, "total": 0.0},
+  "candidates": [{"source": "eagle", "token": 42, "depth": 1, "score": -0.2, "accepted": true}],
+  "acceptance_path": [42],
+  "stats": {"mat": 2, "eagle_nodes": 40, "sam_nodes": 20}
+}
+```
+
+### 3. Contracts
+
+`FusionProfiler` is opt-in and must not call `time.perf_counter()` on disabled
+paths. Enabled profile runs record `draft_eagle`, `draft_sam`, `fusion_logic`,
+`verify`, and `total` timings, plus cumulative `fusion_overhead_pct` and CUDA
+memory deltas.
+
+Oracle candidate records are non-root draft nodes. `acceptance_path` is also
+non-root. Oracle MAT adds the always-emitted root/start token so it remains
+comparable with evaluation `accept_lengths`.
+
+### 4. Validation & Error Matrix
+
+* `--profile-fusion` with multi-process evaluation -> fail before model load.
+* profile step without `candidates` -> timing summary remains valid, but oracle
+  analysis skips the step with a warning.
+* malformed candidate source outside `eagle` or `sam` -> oracle analysis skips
+  that step with a warning.
+* disabled profiler -> no timing calls, no trace mutation, no JSON writes.
+
+### 5. Good/Base/Bad Cases
+
+* Good: run 10 MT-Bench samples remotely with `--profile-fusion`, then feed the
+  JSON trace to `evaluation/oracle_fusion_analysis.py`.
+* Base: locally compile the profiler/oracle modules and run synthetic JSON
+  oracle checks without loading model dependencies.
+* Bad: using trace-on profiling output as a throughput baseline for speedup
+  claims; profile traces are for diagnosis, not final speedup tables.
+
+### 6. Tests Required
+
+* Compile `samd/profiling/fusion_profiler.py`,
+  `evaluation/oracle_fusion_analysis.py`, and touched evaluation entry points.
+* Syntax-check `scripts/profile_fusion_overhead.sh` with `bash -n`.
+* Unit/smoke test that disabled `FusionProfiler` does not call
+  `time.perf_counter()`.
+* Unit/smoke test that oracle analysis loads profiler JSON steps and reports
+  MAT with the root/start token included.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+candidate["accepted"] = candidate["token"] in new_tokens
+```
+
+Correct:
+
+```python
+candidate["accepted"] = candidate["token_path"][1:] == acceptance_path[:depth]
+```
+
+## Scenario: Boundary Predictor Calibration Traces
+
+### 1. Scope / Trigger
+
+This contract applies when `--profile-fusion` traces are used to calibrate an
+offline rejection-boundary predictor before any online SAM grafting
+implementation.
+
+### 2. Signatures
+
+Capture enriched traces with the task runner:
+
+```bash
+bash scripts/profile_boundary_predictor_humaneval.sh
+```
+
+Analyze an enriched trace with:
+
+```bash
+python evaluation/analyze_boundary_predictor.py \
+  --trace-file <fusion_profile.json> \
+  --answer-file <answer.jsonl> \
+  --train-begin 0 \
+  --train-end 82 \
+  --valid-begin 82 \
+  --valid-end 164 \
+  --max-thresholds 256 \
+  --node-budget 60 \
+  --output-dir <output_dir>
+```
+
+### 3. Contracts
+
+EAGLE candidate records must preserve existing oracle fields and add
+`tree_index`, `parent_index`, `local_logprob`, `rank_among_siblings`,
+`sibling_margin`, and `cumulative_path_logprob` when logprobs are available.
+`tree_index` and `parent_index` refer to the original EAGLE tree, not the
+post-fusion selected node order.
+
+Profile step metadata must include a question split key such as
+`metadata.question_index` so q0-82/q82-164 calibration can be reconstructed
+from decode steps.
+
+Boundary labels are top-level step fields:
+
+```text
+first_rejected_depth
+first_rejected_tree_index
+first_rejected_parent_index
+first_rejected_parent_path
+```
+
+When the verifier accepts only the root/start token and no non-root token,
+`first_rejected_depth` is `1`. When the verifier target token is absent from
+the EAGLE children at the rejected depth, do not invent a rejected tree index;
+record `first_rejected_tree_index = null` and identify the accepted parent
+instead.
+
+Margin semantics are fixed:
+
+```text
+margin = top1_logprob - top2_logprob
+larger margin -> EAGLE is more certain
+low-margin trigger -> sibling_margin < threshold
+high-margin trigger -> sibling_margin > threshold
+```
+
+Thresholds applied to `exp(logprob)` values must be in `[0, 1]`.
+
+The analyzer must bound threshold sweeps with `--max-thresholds` because
+node-level margins/logprobs are dense floating-point values. Using every unique
+score as a threshold can make a small smoke trace spend minutes or hours in CPU
+sweeps.
+
+Calibration MAT must use one shared node budget for EAGLE-only, perfect, and
+predicted-boundary oracle selectors. Keep `--node-budget` aligned with
+`evaluation/oracle_fusion_analysis.py --top-k` for the same trace. A predicted
+boundary oracle MAT larger than the same-budget perfect MAT is an analyzer bug,
+not a model result.
+
+Threshold selection must first prefer rows satisfying the training trigger-rate
+and precision constraints. If no row satisfies those constraints, the analyzer
+may report the best unconstrained row only as a diagnostic and must mark it as
+unconstrained in the output.
+
+### 4. Validation & Error Matrix
+
+* missing `question_index` on any step -> analyzer error.
+* missing rejection-boundary labels -> analyzer error.
+* missing node-level EAGLE fields -> analyzer error.
+* old profile traces without enriched fields -> analyzer error, not silent
+  depth-only fallback.
+* probability threshold outside `[0, 1]` -> `ValueError`.
+* dense threshold candidate set -> quantile/downsampled grid capped by
+  `--max-thresholds`.
+* predicted-boundary oracle MAT above same-budget perfect MAT -> analyzer bug;
+  fix budget/selector accounting before interpreting results.
+
+### 5. Good/Base/Bad Cases
+
+* Good: enriched HumanEval trace records question ids, node confidence fields,
+  and boundary labels; analyzer selects thresholds on q0-82 and reports held-out
+  q82-164 metrics.
+* Base: old oracle analysis still loads the same trace and computes MAT because
+  original `candidates`, `acceptance_path`, and `stats` fields are preserved.
+* Bad: using depth-only prediction as the main result when node/path labels are
+  missing.
+
+### 6. Tests Required
+
+* Unit test that enriched `candidate_trace_records` exports EAGLE topology and
+  confidence fields.
+* Unit test that `FusionProfiler` step context records `question_index`.
+* Unit test that oracle loader preserves enriched optional fields.
+* Unit test that low-margin and high-margin predictors use opposite comparison
+  directions.
+* Unit test that node-level prediction can beat depth-only on a same-depth
+  wrong-branch synthetic case.
+* Unit test that dense threshold grids are capped by `--max-thresholds`.
+* Compile `evaluation/analyze_boundary_predictor.py` and syntax-check
+  `scripts/profile_boundary_predictor_humaneval.sh`.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+trigger = sibling_margin > margin_threshold
+first_rejected_tree_index = first_child_under_parent
+```
+
+Correct:
+
+```python
+trigger = sibling_margin < margin_threshold
+first_rejected_tree_index = None
+first_rejected_parent_index = accepted_parent_tree_index
+```
+
+## Scenario: Depth-Decoupled Oracle Analysis
+
+### 1. Scope / Trigger
+
+Use this contract when measuring the oracle gap for leaf-only SAM tail extension
+from fusion profile traces. The analysis is offline diagnosis, not a throughput
+benchmark.
+
+### 2. Signatures
+
+Run the standalone analyzer:
+
+```bash
+python evaluation/oracle_depth_decoupled.py \
+  --trace-file <fusion_profile.json> \
+  --output <depth_oracle.json> \
+  --plot-output <depth_oracle_gap.svg> \
+  --max-split 10
+```
+
+The existing oracle analyzer also reports the optimal split selector:
+
+```bash
+python evaluation/oracle_fusion_analysis.py \
+  --trace-file <fusion_profile.json> \
+  --output-json <oracle_summary.json> \
+  --depth-max-split 10
+```
+
+### 3. Contracts
+
+The depth-decoupled oracle must count MAT as root/start token plus accepted
+non-root draft tokens, matching `evaluation/oracle_fusion_analysis.py`.
+
+`oracle_results` must include `eagle_only` and `depth_decoupled_d<N>` entries
+for the swept split range. Each split entry reports MAT, gap versus Eagle-only,
+EAGLE/SAM node budgets, prefix success rate, and SAM tail acceptance metrics.
+The analyzer also writes an SVG oracle-gap plot and records its path in
+top-level `plot_file`.
+
+Top-level `depth_strata` is a split-level list for the optimal split, such as
+`0-D` for the EAGLE prefix and `D+1-max` for the SAM tail. Per-depth diagnostics
+belong under `depth_details`.
+
+This is an oracle over recorded profile candidates. Existing traces do not
+regenerate SAM from every accepted EAGLE leaf, so SAM tail credit is limited to
+recorded SAM candidates whose path matches the verifier acceptance suffix.
+
+### 4. Validation & Error Matrix
+
+* missing or empty trace file -> fail with no decode steps found.
+* malformed candidate source outside `eagle` or `sam` -> skip the step with a
+  warning through the shared oracle loader.
+* candidate with root-inclusive `token_path` -> compare `token_path[1:]` against
+  `acceptance_path`.
+* candidate with only root-inclusive parent `path` -> drop the root before
+  reconstructing the non-root path.
+
+### 5. Good/Base/Bad Cases
+
+* Good: analyze remote MT-Bench or MedQA fusion profile traces and use the
+  optimal split gap as a decision gate for full depth-decoupled fusion.
+* Base: run synthetic JSON smoke tests locally without model dependencies.
+* Bad: treating the recorded-candidate oracle as proof that SAM was actually
+  regenerated from every EAGLE leaf.
+
+### 6. Tests Required
+
+* Compile `evaluation/oracle_depth_decoupled.py` and
+  `evaluation/oracle_fusion_analysis.py`.
+* Synthetic test that MAT includes the root/start token.
+* Synthetic test that `depth_strata` is split-level while `depth_details` is
+  per-depth.
+* Regression test for root-inclusive `token_path` and fallback `path` handling.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+sam_extension = count_matching_sam_tokens_from_root()
+```
+
+Correct:
+
+```python
+sam_extension = count_matching_sam_tokens_after_accepted_eagle_prefix(d_split)
+```

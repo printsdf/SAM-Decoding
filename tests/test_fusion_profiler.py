@@ -12,6 +12,7 @@ def test_fusion_profiler_records_oracle_trace_fields(tmp_path):
         summary_path=str(summary_path),
         metadata={"fusion_mode": "naive"},
     ) as profiler:
+        profiler.set_step_context({"question_id": "HumanEval/0", "question_index": 0})
         profiler.start_step({"sample": 1})
         profiler.add_step_trace(
             candidates=[
@@ -25,12 +26,20 @@ def test_fusion_profiler_records_oracle_trace_fields(tmp_path):
             ],
             acceptance_path=[11],
             stats={"mat": 2, "eagle_nodes": 1, "sam_nodes": 0},
+            labels={
+                "first_rejected_depth": None,
+                "first_rejected_tree_index": None,
+                "first_rejected_parent_index": None,
+            },
         )
         profiler.finish_step({"accepted_tokens": 2})
 
     data = json.loads(trace_path.read_text(encoding="utf-8"))
     assert data["summary"]["steps"] == 1
+    assert data["steps"][0]["metadata"]["question_id"] == "HumanEval/0"
+    assert data["steps"][0]["metadata"]["question_index"] == 0
     assert data["steps"][0]["candidates"][0]["accepted"] is True
     assert data["steps"][0]["acceptance_path"] == [11]
+    assert data["steps"][0]["first_rejected_depth"] is None
     assert data["steps"][0]["stats"]["mat"] == 2
     assert summary_path.exists()

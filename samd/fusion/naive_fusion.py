@@ -68,6 +68,23 @@ def _safe_mean(values: Iterable[float]) -> float:
     return sum(values) / len(values)
 
 
+def _json_safe_trace_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "detach"):
+        value = value.detach().cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe_trace_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_trace_value(item) for item in value]
+    return str(value)
+
+
 def _count_duplicates(
     eagle_nodes: List[CandidateNode],
     sam_nodes: List[CandidateNode],
@@ -80,6 +97,85 @@ def _count_duplicates(
 def _node_sources_by_tree_index(fused_tree: FusedTree) -> List[str]:
     """Return source labels aligned with fused_tree token indices."""
     return ["root"] + [node.source for node in fused_tree.nodes]
+
+
+def candidate_trace_records(nodes: Iterable[CandidateNode]) -> List[Dict[str, Any]]:
+    """Return JSON-safe raw candidate records for offline oracle analysis."""
+    records = []
+    for node in nodes:
+        path = [int(token) for token in node.path]
+        token = int(node.token)
+        record = {
+            "source": str(node.source),
+            "token": token,
+            "depth": int(node.depth),
+            "score": float(node.score),
+            "normalized_score": float(node.normalized_score),
+            "path": path,
+            "token_path": path + [token],
+            "source_scores": {
+                str(key): float(value) for key, value in node.source_scores.items()
+            },
+        }
+        for key, value in node.metadata.items():
+            if key not in record:
+                record[str(key)] = _json_safe_trace_value(value)
+        records.append(record)
+    return records
+
+
+def _eagle_trace_metadata(
+    tree_spec: TreeSpec,
+    logprobs: List[float],
+) -> Dict[int, Dict[str, Any]]:
+    """Build node-level EAGLE confidence metadata keyed by tree index."""
+    has_logprobs = len(logprobs) == len(tree_spec.tokens)
+    children_by_parent: Dict[int, List[int]] = {}
+    for index, parent_index in enumerate(tree_spec.parents[1:], start=1):
+        children_by_parent.setdefault(parent_index, []).append(index)
+
+    rank_by_index: Dict[int, Optional[int]] = {}
+    margin_by_index: Dict[int, Optional[float]] = {}
+    if has_logprobs:
+        for child_indices in children_by_parent.values():
+            ranked = sorted(
+                child_indices,
+                key=lambda item: (-float(logprobs[item]), int(item)),
+            )
+            margin = (
+                float(logprobs[ranked[0]]) - float(logprobs[ranked[1]])
+                if len(ranked) >= 2
+                else None
+            )
+            for rank, index in enumerate(ranked, start=1):
+                rank_by_index[index] = rank
+                margin_by_index[index] = margin
+
+    metadata: Dict[int, Dict[str, Any]] = {}
+    for index in range(1, len(tree_spec.tokens)):
+        parent_index = int(tree_spec.parents[index])
+        path_indices = tree_spec.node_path_indices(index)
+        path_tokens = [int(tree_spec.tokens[path_index]) for path_index in path_indices]
+        if has_logprobs:
+            nonroot_path_indices = path_indices[1:]
+            cumulative_path_logprob = float(
+                sum(float(logprobs[path_index]) for path_index in nonroot_path_indices)
+            )
+            local_logprob = float(logprobs[index])
+        else:
+            cumulative_path_logprob = None
+            local_logprob = None
+        metadata[index] = {
+            "tree_index": int(index),
+            "parent_index": parent_index,
+            "path_tree_indices": [int(path_index) for path_index in path_indices],
+            "path_tokens": path_tokens,
+            "local_logprob": local_logprob,
+            "rank_among_siblings": rank_by_index.get(index),
+            "sibling_margin": margin_by_index.get(index),
+            "cumulative_path_logprob": cumulative_path_logprob,
+        }
+    return metadata
 
 
 def parse_eagle_tree(
@@ -104,6 +200,7 @@ def parse_eagle_tree(
     if raw_logprobs is not None and len(logprobs) != len(tree_spec.tokens):
         raise ValueError("EAGLE logprobs length must match draft_tokens length")
 
+    trace_metadata = _eagle_trace_metadata(tree_spec, logprobs)
     nodes: List[CandidateNode] = []
     for index in range(1, len(tree_spec.tokens)):
         parent_index = tree_spec.parents[index]
@@ -123,6 +220,7 @@ def parse_eagle_tree(
                 depth=depth,
                 path=path,
                 source_scores={"eagle": score},
+                metadata=trace_metadata[index],
             )
         )
     return nodes
@@ -156,6 +254,10 @@ def parse_sam_sequence(
                 depth=position,
                 path=list(path),
                 source_scores={"sam": score},
+                metadata={
+                    "sam_match_length": max(int(match_length or 0), 0),
+                    "sam_position": int(position),
+                },
             )
         )
         path.append(int(token))
@@ -352,6 +454,9 @@ def fuse_eagle_sam_naive(
     """Naive EAGLE3 + SAM fusion: merge, deduplicate, score-sort, and truncate."""
     eagle_nodes = parse_eagle_tree(eagle_tree, start_token, eagle_logprobs=eagle_logprobs)
     sam_nodes = parse_sam_sequence(sam_candidates, start_token, sam_match_length)
+    oracle_candidates = (
+        candidate_trace_records(eagle_nodes + sam_nodes) if config.debug else None
+    )
     merged_nodes = merge_and_dedup(
         eagle_nodes,
         sam_nodes,
@@ -411,6 +516,8 @@ def fuse_eagle_sam_naive(
         "truncate_strategy": config.truncate_strategy,
         "sam_match_length": sam_match_length_value,
     }
+    if oracle_candidates is not None:
+        metadata["oracle_candidates"] = oracle_candidates
     metadata.update(config.metadata)
 
     fused_tree = build_tree_buffers(
