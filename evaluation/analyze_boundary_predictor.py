@@ -798,7 +798,15 @@ def main() -> None:
     print("heldout_trigger_rate: {:.2%}".format(low["trigger_rate"]))
     print("heldout_boundary_precision: {:.2%}".format(low["boundary_precision"]))
     print("heldout_boundary_recall: {:.2%}".format(low["boundary_recall"]))
+    print("heldout_eagle_mat: {:.4f}".format(low["eagle_mat"]))
+    print("heldout_perfect_mat: {:.4f}".format(low["perfect_mat"]))
     print("heldout_predicted_boundary_oracle_mat: {:.4f}".format(low["predicted_boundary_oracle_mat"]))
+    if low["predicted_boundary_oracle_mat"] > low["perfect_mat"] + 1e-9:
+        print(
+            "WARNING: predicted boundary MAT exceeds same-split perfect MAT; "
+            "check node-budget accounting before interpreting this run.",
+            file=sys.stderr,
+        )
     print("pass:", bool(result["pass"]))
     print("output_dir:", output_dir)
 
