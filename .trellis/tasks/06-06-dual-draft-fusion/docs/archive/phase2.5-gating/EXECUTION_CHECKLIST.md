@@ -130,7 +130,7 @@ python evaluation/eval_naive_fusion.py \
 # 对比结果
 # 期望：
 # naive_fusion_v2: > 6.5 MAT, > 54 TPS (> 0.9x Eagle3)
-# 
+#
 # 上限参考：
 # sam_sequence_graft: 7.304 MAT, 63.098 TPS (1.041x Eagle3)
 ```

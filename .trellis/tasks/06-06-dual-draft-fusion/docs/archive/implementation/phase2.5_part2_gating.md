@@ -40,22 +40,22 @@ def gen_candidates(
     device: str,
 ):
     # ... 前面的代码不变 ...
-    
+
     elif samd_config.fusion_mode == "naive":
         start_token = sample_p.squeeze(0).argmax(-1).item()
-        
+
         # ==================== 新增：质量门控 ====================
         # 检查 SAM 匹配质量
         index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
         index_static, match_static = draft.sam_static.lookup(start_token)
         match_static_adjusted = match_static - draft.len_bias
         best_match = max(match_dyn, match_static_adjusted)
-        
+
         # 质量门控：SAM 质量差时退化到 Eagle-only
         if best_match < samd_config.samd_len_threshold:
             # Step 1: 生成 Eagle tree
             eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
-            
+
             # Step 2: 记录统计
             draft.record_naive_fusion({
                 "eagle_nodes": len(eagle_pred_ids),
@@ -64,7 +64,7 @@ def gen_candidates(
                 "sam_match_quality": int(best_match),
                 "threshold": samd_config.samd_len_threshold,
             })
-            
+
             # Step 3: 提取候选 tokens
             retrieve_indices = eagle_buffers["tree_retrieve_indices"]
             if retrieve_indices is not None and len(retrieve_indices) > 0:
@@ -74,7 +74,7 @@ def gen_candidates(
                 )
             else:
                 candidate_tokens = torch.tensor(eagle_pred_ids, device=device)
-            
+
             # Step 4: 返回 Eagle-only candidates
             return Candidates(
                 type=CandidateType.tree,
@@ -83,14 +83,14 @@ def gen_candidates(
                 buffers_kwargs=eagle_buffers,
             )
         # ==================== 质量门控结束 ====================
-        
+
         # SAM 质量好，继续融合（现有代码不变）
         eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
         eagle_tree = {
             "tokens": torch.tensor(eagle_pred_ids, device=device),
             **eagle_buffers,
         }
-        
+
         # ... 后续融合逻辑保持不变 ...
 ```
 

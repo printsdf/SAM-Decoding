@@ -128,12 +128,12 @@ def gen_candidates_naive_fusion(...):
     # 计算 SAM 匹配质量
     match_dyn, match_static = get_sam_match_quality(...)
     best_match = max(match_dyn, match_static)
-    
+
     # 质量门控
     if best_match < threshold:
         # SAM 质量差 → 只用 Eagle
         return eagle_only_candidates
-    
+
     # SAM 质量好 → 才进行融合
     return fuse_with_quality_sam(eagle, sam, best_match)
 ```
@@ -147,11 +147,11 @@ def fuse_with_priority(eagle_nodes, sam_nodes):
     # Eagle 分数 × 1.5 (boost factor)
     for node in eagle_nodes:
         node.boosted_score = node.score * 1.5
-    
+
     # 合并排序
     all_nodes = eagle_nodes + sam_nodes
     sorted_nodes = sort_by_boosted_score(all_nodes)
-    
+
     # 确保至少保留 X% Eagle 节点
     selected = select_with_eagle_quota(sorted_nodes, eagle_ratio=0.7)
     return selected
@@ -165,11 +165,11 @@ def fuse_with_priority(eagle_nodes, sam_nodes):
 def gen_candidates_naive_fusion(...):
     eagle_tree = draft.tree_model.gen_draft(start_token)
     sam_seq = draft.sam.gen_draft_raw(...)
-    
+
     # 使用 TreeSpec.graft_sequence()（已验证有效）
     tree_spec = TreeSpec.from_eagle3_buffers(...).graft_sequence(sam_seq)
     fused_buffers = tree_spec.to_buffers(...)
-    
+
     return fused_tree
 ```
 

@@ -108,7 +108,7 @@ Payoff-guided drafter selection：预测 cache draft 的接受长度 → 选择 
 # 核心指标
 - tokens/sec, MAT, verified_per_accepted
 
-# 来源分析  
+# 来源分析
 - eagle_only_accept, sam_only_accept, both_accept
 - duplicate_rate, agreement_accept_rate
 

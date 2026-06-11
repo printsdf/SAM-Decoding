@@ -58,10 +58,10 @@ naive_fusion:       ~60 nodes (43% more!) ❌
 def estimate_eagle_accept_prob(logprob):
     """
     将 Eagle logprob 映射到接受概率
-    
+
     Args:
         logprob: float, 范围 [-20, 0]
-    
+
     Returns:
         p_accept: float, 范围 [0, 1]
     """
@@ -69,15 +69,15 @@ def estimate_eagle_accept_prob(logprob):
     # logprob = 0 → p ≈ 0.73
     # logprob = -5 → p ≈ 0.27
     # logprob = -10 → p ≈ 0.05
-    
+
     # 调整参数使分布合理
     # 观察：大部分 logprob 在 [-10, -2] 范围
     # 目标：让这个范围映射到 [0.1, 0.9]
-    
+
     k = 0.5  # 调节陡度
     logprob_shifted = logprob + 5  # 平移中心
     p_accept = 1 / (1 + math.exp(-k * logprob_shifted))
-    
+
     return p_accept
 ```
 
@@ -87,10 +87,10 @@ def estimate_eagle_accept_prob(logprob):
 def estimate_sam_accept_prob(match_length):
     """
     将 SAM match_length 映射到接受概率
-    
+
     Args:
         match_length: int, 范围 [0, 40]
-    
+
     Returns:
         p_accept: float, 范围 [0, 1]
     """
@@ -98,13 +98,13 @@ def estimate_sam_accept_prob(match_length):
     # match_length = 0 → p = 0
     # match_length = 10 → p = 0.5
     # match_length ≥ 20 → p = 1.0
-    
+
     # 观察：match_length > 10 的候选通常质量好
     # 目标：match_length [5, 15] → p [0.25, 0.75]
-    
+
     max_length = 20
     p_accept = min(match_length / max_length, 1.0)
-    
+
     return p_accept
 ```
 
@@ -114,14 +114,14 @@ def estimate_sam_accept_prob(match_length):
 def compute_payoff(node):
     """
     计算候选的期望 payoff
-    
+
     Payoff = P(accept) × depth
     """
     if node.source == "eagle":
         p_accept = estimate_eagle_accept_prob(node.score)
     else:  # SAM
         p_accept = estimate_sam_accept_prob(node.score)
-    
+
     payoff = p_accept * node.depth
     return payoff
 ```
@@ -137,20 +137,20 @@ def fuse_eagle_sam_naive(eagle_tree, sam_candidates, ...):
     # 1. 解析
     eagle_nodes = parse_eagle_tree(eagle_tree)  # 42 nodes
     sam_nodes = parse_sam_sequence(sam_candidates)  # 18 nodes
-    
+
     # 2. 分数归一化
     eagle_scores_norm = normalize([n.score for n in eagle_nodes])
     sam_scores_norm = normalize([n.score for n in sam_nodes])
-    
+
     # 3. 合并去重
     merged_nodes = merge_and_dedup(eagle_nodes, sam_nodes)  # 60 nodes
-    
+
     # 4. 按归一化分数排序
     merged_nodes.sort(key=lambda n: n.normalized_score, reverse=True)
-    
+
     # 5. 截断到预算
     selected_nodes = truncate_with_ancestors(merged_nodes, max_tokens=60)
-    
+
     return selected_nodes
 ```
 
@@ -161,24 +161,24 @@ def fuse_eagle_sam_payoff(eagle_tree, sam_candidates, config):
     # 1. 解析
     eagle_nodes = parse_eagle_tree(eagle_tree, eagle_logprobs)
     sam_nodes = parse_sam_sequence(sam_candidates, sam_match_length)
-    
+
     # 2. 计算 payoff（不需要归一化！）
     for node in eagle_nodes:
         node.payoff = compute_payoff(node)
-    
+
     for node in sam_nodes:
         node.payoff = compute_payoff(node)
-    
+
     # 3. 合并去重（保留高 payoff）
     merged_nodes = merge_and_dedup_by_payoff(eagle_nodes, sam_nodes)
-    
+
     # 4. 按 payoff 排序
     merged_nodes.sort(key=lambda n: n.payoff, reverse=True)
-    
+
     # 5. 贪心选择（控制预算）
     max_tokens = config.get("max_draft_tokens", 50)  # 减少到 50
     selected_nodes = select_with_budget(merged_nodes, max_tokens)
-    
+
     return selected_nodes
 
 
@@ -188,17 +188,17 @@ def select_with_budget(nodes, budget):
     """
     selected_keys = set()
     selected_nodes = []
-    
+
     for node in nodes:  # 已按 payoff 排序
         # 收集祖先
         ancestors = collect_ancestors(node)
         needed_keys = {get_key(a) for a in ancestors} | {get_key(node)}
-        
+
         # 检查预算
         if len(selected_keys | needed_keys) <= budget:
             selected_keys.update(needed_keys)
             selected_nodes.append(node)
-    
+
     return selected_nodes
 ```
 
@@ -221,12 +221,12 @@ class PayoffEstimator:
         self.eagle_shift = self.config.get("eagle_shift", 5.0)
         # SAM 线性参数
         self.sam_max_length = self.config.get("sam_max_length", 20)
-    
+
     def estimate_eagle_payoff(self, logprob, depth):
         logprob_shifted = logprob + self.eagle_shift
         p_accept = 1 / (1 + math.exp(-self.eagle_k * logprob_shifted))
         return p_accept * depth
-    
+
     def estimate_sam_payoff(self, match_length, depth):
         p_accept = min(match_length / self.sam_max_length, 1.0)
         return p_accept * depth
@@ -249,7 +249,7 @@ if samd_config.fusion_mode == "payoff_aware":
     # 创建 payoff estimator
     from samd.fusion.payoff_estimator import PayoffEstimator
     estimator = PayoffEstimator(samd_config.payoff_config)
-    
+
     # 融合
     fused_tree = fuse_eagle_sam_payoff(
         eagle_tree=eagle_tree,
@@ -268,11 +268,11 @@ if samd_config.fusion_mode == "payoff_aware":
 @dataclass
 class SamdConfig:
     # ... 现有字段
-    
+
     # Fusion 配置
     fusion_mode: Literal["none", "naive", "payoff_aware"] = "none"
     fusion_max_draft_tokens: int = 50  # 从 60 减少到 50
-    
+
     # Payoff 配置
     payoff_config: Dict = field(default_factory=lambda: {
         "eagle_k": 0.5,

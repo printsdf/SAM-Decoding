@@ -64,7 +64,7 @@ Rationale:
 Keep the analysis code. Do not implement a MedQA-specific runtime
 depth-decoupled fusion mode from this result.
 
-Experiment start commit: not recorded in the note.  
+Experiment start commit: not recorded in the note.
 Revert condition if discarded: not applicable, analysis-only result.
 
 ## Avoid Repetition
@@ -78,4 +78,4 @@ Do not repeat MedQA depth-decoupled oracle unless one of these changes:
 ## Next Step
 
 Run the MT-Bench oracle gate from
-`docs/experiments/plans/2026-06-10-depth-decoupled-oracle.md`.
+`.trellis/tasks/06-06-dual-draft-fusion/docs/experiments/plans/2026-06-10-depth-decoupled-oracle.md`.

@@ -38,7 +38,7 @@ def parse_eagle_tree(eagle_tree):
 ```python
 def topK_genrate(self, hidden_states, input_ids, head, max_length=4):
     # ... 生成逻辑 ...
-    
+
     # 当前只返回 tokens 和 buffers
     return draft_tokens, tree_buffers
 ```
@@ -47,24 +47,24 @@ def topK_genrate(self, hidden_states, input_ids, head, max_length=4):
 ```python
 def topK_genrate(self, hidden_states, input_ids, head, max_length=4):
     # ... 生成逻辑 ...
-    
+
     # 新增：收集每个 token 的 logprob
     logprobs = []
-    
+
     for depth in range(max_length):
         # 前向传播
         logits = self.lm_head(hidden_states)
         probs = torch.softmax(logits, dim=-1)
-        
+
         # 提取 topk
         topk_probs, topk_indices = torch.topk(probs, k=self.top_k)
         topk_logprobs = torch.log(topk_probs)  # 新增
-        
+
         # 收集当前层的 logprobs
         logprobs.extend(topk_logprobs.tolist())
-        
+
         # ... 继续生成下一层 ...
-    
+
     return draft_tokens, tree_buffers, logprobs  # 返回 logprobs
 ```
 
@@ -76,7 +76,7 @@ def topK_genrate(self, hidden_states, input_ids, head, max_length=4):
 def gen_draft(self, start_token: int):
     # 调用 topK_genrate
     draft_tokens, tree_buffers, logprobs = self.model.topK_genrate(...)
-    
+
     # 返回时包含 logprobs
     return draft_tokens, tree_buffers, logprobs
 ```
@@ -92,14 +92,14 @@ def parse_eagle_tree(eagle_tree, eagle_logprobs):
     eagle_logprobs: List[float]，与 tokens 对齐
     """
     nodes = []
-    
+
     # 从 tree_mask 推导树结构
     tree_spec = TreeSpec.from_eagle3_buffers(...)
-    
+
     for i, token in enumerate(eagle_tree["tokens"]):
         if i == 0:
             continue  # 跳过 root
-        
+
         nodes.append(CandidateNode(
             token=token,
             source="eagle",
@@ -107,7 +107,7 @@ def parse_eagle_tree(eagle_tree, eagle_logprobs):
             depth=compute_depth(i, tree_spec),
             path=get_path(i, tree_spec),
         ))
-    
+
     return nodes
 ```
 
@@ -118,9 +118,9 @@ def parse_eagle_tree(eagle_tree, eagle_logprobs):
 ```python
 elif samd_config.fusion_mode == "naive":
     start_token = sample_p.squeeze(0).argmax(-1).item()
-    
+
     # ... 质量门控 ...
-    
+
     # 生成 Eagle tree（带 logprob）
     eagle_tokens, eagle_buffers, eagle_logprobs = draft.tree_model.gen_draft(start_token)
     eagle_tree = {
@@ -128,9 +128,9 @@ elif samd_config.fusion_mode == "naive":
         "logprobs": eagle_logprobs,  # 新增
         **eagle_buffers,
     }
-    
+
     # ... SAM 生成 ...
-    
+
     # 融合（传入 logprobs）
     fused_tree = fuse_eagle_sam_naive(
         eagle_tree=eagle_tree,
@@ -149,7 +149,7 @@ elif samd_config.fusion_mode == "naive":
 
 **问题**: Eagle3 的 tree 是 flattened 的，如何对应 logprob？
 
-**解决**: 
+**解决**:
 ```python
 # Eagle3 生成顺序：BFS 逐层生成
 # tokens = [root, layer1_tok1, layer1_tok2, ..., layer2_tok1, ...]
@@ -243,15 +243,15 @@ Naive Fusion Analysis (with real logprob)
 Average nodes per step:
   Eagle: 42.3
   SAM:   18.7
-  
+
 Score distribution:
   Eagle logprob range: [-15.2, -0.3]
   SAM match_length range: [0, 12]
-  
+
 Acceptance rates:
   Eagle: 45.2% (vs 13.7% with depth proxy) ✅ 大幅提升
   SAM:   18.3%
-  
+
 Total tokens/sec: 142.5 (vs 130 estimated) ✅ 提升 9.6%
 ============================================================
 ```

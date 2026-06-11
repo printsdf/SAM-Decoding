@@ -5,6 +5,9 @@
 {"file": ".trellis/spec/backend/runtime-constraints.md", "reason": "Remote-runtime and model-environment constraints relevant to validation."}
 {"file": ".trellis/tasks/06-06-dual-draft-fusion/README.md", "reason": "Task index and latest handoff context."}
 {"file": ".trellis/tasks/06-06-dual-draft-fusion/prd.md", "reason": "Current task requirements, decisions, and open questions."}
-{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-09-mtbench-naive-logprob-profile.md", "reason": "Latest confirmed Phase 3.1 MT-Bench results and reproducibility caveats."}
-{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/research/humaneval_comparison_results.md", "reason": "HumanEval negative-baseline analysis for naive fusion."}
-{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/implementation/phase3.1_eagle3_logprob.md", "reason": "Original Phase 3.1 implementation specification for EAGLE3 logprob extraction."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-humaneval-oracle-results.md", "reason": "Phase B gate evidence: rejection-boundary oracle gap on HumanEval."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/specs/2026-06-11-phase2-boundary-graft.md", "reason": "Current predicted-boundary SAM grafting design and success criteria."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/research/2026-06-10-rejection-boundary-novelty-analysis.md", "reason": "Prior-work positioning for rejection-boundary SAM repair."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Task-local documentation layout and no-root-docs convention."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/archive/research/humaneval_comparison_results.md", "reason": "Historical HumanEval negative-baseline analysis for naive fusion."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/archive/implementation/phase3.1_eagle3_logprob.md", "reason": "Historical Phase 3.1 implementation specification for EAGLE3 logprob extraction."}

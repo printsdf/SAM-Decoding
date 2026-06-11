@@ -28,13 +28,13 @@ if samd_config.fusion_mode == "naive":
     if best_match < samd_len_threshold:
         # 添加这行
         print(f"[GATE] -> SKIP SAM (best={best_match} < {samd_len_threshold})", flush=True)
-        
+
         eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
         # ... 后续代码不变
-    
+
     # 在 else 分支也添加（约 line 155，fusion 分支开始处）
     print(f"[GATE] -> FUSE SAM (best={best_match} >= {samd_len_threshold})", flush=True)
-    
+
     eagle_tokens, eagle_buffers = draft.tree_model.gen_draft(start_token)
     # ... 后续代码不变
 ```
@@ -116,7 +116,7 @@ grep "\[GATE\]" debug_3.log
 
 **原因**: threshold=5 太低，或者动态 SAM 在这些样本上确实质量不错
 
-**下一步**: 
+**下一步**:
 - 提高 threshold 到 10 测试，或
 - 直接实施方案 B（Eagle 优先级保护）
 

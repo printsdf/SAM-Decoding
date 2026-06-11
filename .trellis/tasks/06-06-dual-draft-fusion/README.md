@@ -1,88 +1,78 @@
-# Dual Draft Fusion Task Index
+# Dual Draft Fusion Task Dashboard
 
-Last updated: 2026-06-10
+Last updated: 2026-06-11
 
-This is the active Trellis workspace for `dual-draft-fusion`. Use this file as
-the entry point. Detailed experiment design, execution plans, and result notes
-live under `docs/experiments/` so future sessions can follow the superpowers
-research workflow without reading every historical scratch note.
+This is the active Trellis workspace for `dual-draft-fusion`. Read this file
+first, then follow only the current links below.
 
-## Read First
+## Current State
 
-| File | Purpose |
-| --- | --- |
-| `prd.md` | Current research objective, decision gates, and open work |
-| `docs/experiments/README.md` | Experiment index and documentation rules |
-| `docs/experiments/specs/2026-06-10-depth-decoupled-oracle.md` | Active experiment design card |
-| `docs/experiments/plans/2026-06-10-depth-decoupled-oracle.md` | Remote execution and artifact plan |
-| `docs/experiments/results/2026-06-10-medqa-depth-decoupled-oracle.md` | MedQA oracle result and rejection decision |
-| `docs/experiments/results/2026-06-09-mtbench-naive-logprob-profile.md` | Phase 3.1 MT-Bench logprob/profiling result |
-| `.trellis/spec/backend/evaluation-protocols.md` | Benchmark and trace protocol |
-| `.trellis/spec/backend/tree-fusion.md` | Fusion-mode implementation contract |
+Depth-decoupled fusion is closed, and HumanEval oracle evidence approved
+Rejection-Boundary SAM Repair for Phase B implementation.
 
-## Current Bottom Line
-
-`naive_fusion` remains a negative or neutral baseline. Replacing the EAGLE depth
-proxy with real logprobs removed the misleading catastrophic interpretation, but
-the current-machine MT-Bench subset still trailed pure EAGLE3:
-
-```text
-pure_eagle3_current_q0_11:      54.109 TPS, 6.189 MAT
-naive_logprob_current_q0_11:    52.047 TPS, 6.075 MAT
-relative throughput:             0.962x
-```
-
-The 2026-06-10 MedQA depth-decoupled oracle rejected that direction for MedQA:
-the best split matched EAGLE-only at `+0.00%` oracle gap, while the perfect
-oracle ceiling was only `+1.45%`.
-
-The next valid decision is the MT-Bench depth-decoupled oracle gate:
-
-```text
-oracle gap > 3%  -> consider implementing depth-decoupled fusion
-oracle gap < 3%  -> pivot to rejection-boundary recovery or another direction
-```
-
-## Directory Map
-
-| Path | Status | Notes |
+| Dataset | Decision | Evidence |
 | --- | --- | --- |
-| `prd.md` | Current | Short PRD and handoff summary |
-| `task.json` | Current | Trellis metadata |
-| `implement.jsonl`, `check.jsonl` | Current | Curated context for future non-inline agents |
-| `docs/experiments/specs/` | Current | Hypotheses, baselines, metrics, and decision gates |
-| `docs/experiments/plans/` | Current | Exact remote commands, artifacts, sanity checks, stop conditions |
-| `docs/experiments/results/` | Current | Evidence, confounders, decisions, and next steps |
-| `docs/implementation/` | Historical/current | Implementation designs and summaries by phase |
-| `docs/research/` | Historical/current | Literature, diagnosis, and comparative analysis |
-| `docs/archive/` | Historical | Stale PRDs, debug checklists, validation commands, and session summaries |
-| `scripts/` | Historical/current | Task-local remote/evaluation helpers |
+| MedQA q0-80 | Reject | Best depth-decoupled oracle gap `+0.00%` |
+| MT-Bench q0-80 | Reject | Best depth-decoupled oracle gap `+0.61%`, below the 3% gate |
+| HumanEval q0-164 | Proceed | Rejection-boundary oracle gap `+9.65%`, above the 7% gate |
 
-## Documentation Rules
+The active question is no longer "should SAM be fused broadly with EAGLE3?"
+It is:
 
-- Keep current status in `README.md` and `prd.md`; do not create another
-  top-level status file.
-- Put each new experiment in `docs/experiments/` with a date-prefixed slug.
-- A result note must state the baseline, metric, selection rule, confounders,
-  decision, and next step.
-- Historical debug instructions belong under `docs/archive/`, not the task root.
-- Preserve remote artifact paths and machine/runtime caveats in result notes.
+```text
+Can predicted-boundary SAM grafting recover enough of the HumanEval oracle
+ceiling to beat EAGLE3-only throughput?
+```
 
-## Reproducibility Caveats
+## Read Next
 
-- The repository was dirty during Phase 3.1 validation. Do not assume commit
-  `09c97b5` alone reproduces the run.
-- Full-run MT-Bench files with 140+ TPS should not be compared against current
-  50+ TPS runs unless machine/runtime provenance is proven.
-- Use trace-off outputs for speedup comparisons. Trace-on or fusion-profile
-  outputs are diagnostic and should not become final throughput claims.
-- `scripts/profile_fusion_mt_bench.sh` passes EAGLE3 tail flags if the
-  environment defines `EAGLE3_TAIL_PATH` or `EAGLE3_TAIL_TYPE`; unset them for a
-  no-tail oracle gate.
+| Order | File | Why |
+| ---: | --- | --- |
+| 1 | `prd.md` | Current objective, gates, and non-goals |
+| 2 | `docs/experiments/README.md` | Experiment table and status |
+| 3 | `docs/experiments/results/2026-06-10-humaneval-oracle-results.md` | Phase B gate evidence |
+| 4 | `docs/experiments/specs/2026-06-11-phase2-boundary-graft.md` | Current implementation design |
+| 5 | `docs/research/2026-06-10-rejection-boundary-novelty-analysis.md` | Prior-work positioning |
+
+## Active Work
+
+Phase B: implement and validate predicted-boundary SAM grafting on HumanEval.
+
+| Workstream | Decision Gate | Output |
+| --- | --- | --- |
+| Boundary-graft implementation | MAT `> 7.96` on HumanEval full | Proceed to paper ablations |
+| Threshold sweep | Best MAT without TPS collapse | Select `boundary_graft_threshold` |
+| Cross-check | MT-Bench q0-80 smaller but non-negative gain | Confirm domain specificity |
+
+Do not use trace-on/profile outputs as final throughput evidence. Profile traces
+are diagnostic inputs; speedup claims require trace-off inference outputs.
+
+## Where Things Go
+
+| Path | Use |
+| --- | --- |
+| `README.md` | This dashboard only |
+| `prd.md` | Current research objective and decision rules |
+| `docs/experiments/` | Specs, plans, and result notes |
+| `docs/research/` | Current research notes that inform active decisions |
+| `docs/reference/` | Migrated usage guides and structural notes tied to this task |
+| `docs/archive/` | Historical implementation specs, old research, debug notes, old PRDs |
+| `scripts/` | Task-local helper scripts |
+
+The task root should not contain ad hoc result files, `research/`, `notes/`, or
+old phase docs. Put them under `docs/`.
+
+## Important Caveats
+
+- Use same-trace oracle comparisons for decision gates.
+- Use trace-off inference outputs for speedup claims; profile traces are
+  diagnostics.
+- Do not compare throughput across machines unless provenance is documented.
+- Do not build Static SAM memory from evaluation answers or test labels.
 
 ## Suggested Opening Prompt
 
 ```text
 Read .trellis/tasks/06-06-dual-draft-fusion/README.md and prd.md.
-Continue the MT-Bench depth-decoupled oracle gate using docs/experiments/.
+Continue Phase B predicted-boundary SAM grafting from docs/experiments/specs/2026-06-11-phase2-boundary-graft.md.
 ```

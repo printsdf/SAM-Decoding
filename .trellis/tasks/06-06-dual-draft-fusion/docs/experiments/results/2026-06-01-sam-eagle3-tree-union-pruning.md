@@ -9,7 +9,7 @@
 ## Evidence
 
 - Baseline to beat:
-  - Stage A `tree_fusion="sam_sequence_graft"`, recorded in `docs/experiments/results/2026-06-01-sam-eagle3-tree-fusion.md`.
+  - Stage A `tree_fusion="sam_sequence_graft"`, recorded in `.trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-01-sam-eagle3-tree-fusion.md`.
 - New Stage B runs:
   - `evaluation/data/mt_bench/model_answer/samd_eagle3_union_p1.jsonl`
   - `evaluation/data/medquad/model_answer/samd_eagle3_union_p1.jsonl`

@@ -179,13 +179,13 @@ class PayoffEstimator:
     def __init__(self):
         # 简单的启发式估计器（Phase 3.2.1）
         pass
-    
+
     def estimate_eagle_payoff(self, logprob, depth):
         # Eagle: logprob 越高，越可能被接受
         # 简化：p_accept ≈ sigmoid(logprob)
         p_accept = 1 / (1 + exp(-logprob))
         return p_accept * depth
-    
+
     def estimate_sam_payoff(self, match_length, depth):
         # SAM: match_length 越长，越可能被接受
         # 简化：p_accept ≈ match_length / max_length

@@ -11,7 +11,8 @@ explicitly requires one. Most durable data lives in:
 * `evaluation/data/**` for benchmark questions and model answers.
 * `tools/static_sam/**` for corpus schemas, registry entries, and artifact
   builders.
-* `docs/experiments/**` for human-readable experiment specs and results.
+* `.trellis/tasks/<task>/docs/experiments/**` for human-readable experiment
+  specs, plans, and results.
 
 ## Data and Artifact Patterns
 

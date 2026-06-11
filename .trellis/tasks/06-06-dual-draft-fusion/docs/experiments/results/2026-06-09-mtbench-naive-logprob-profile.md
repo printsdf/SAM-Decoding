@@ -75,7 +75,7 @@ depth-decoupled decision gate.
 Keep the logprob and profiling work as diagnostic infrastructure unless a later
 cleanup task decides otherwise.
 
-Experiment start commit: `09c97b5` was referenced but not self-contained.  
+Experiment start commit: `09c97b5` was referenced but not self-contained.
 Revert condition if discarded: only after confirming no later experiments depend
 on EAGLE3 logprob metadata or fusion profile traces.
 
@@ -91,4 +91,4 @@ Do not rerun this comparison without recording:
 ## Next Step
 
 Run the no-tail MT-Bench depth-decoupled oracle gate and record a new result
-note under `docs/experiments/results/`.
+note under `.trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/`.

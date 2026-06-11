@@ -1,15 +1,10 @@
-# Task Documentation Map
+# Task Docs
 
-This directory holds human-readable research notes for the
-`dual-draft-fusion` Trellis task.
+This directory is not the task entry point. Start with `../README.md`.
 
 | Path | Purpose |
 | --- | --- |
-| `experiments/specs/` | Experiment design cards: hypothesis, baseline, metric, dataset, budget |
-| `experiments/plans/` | Execution plans: exact commands, artifacts, sanity checks, stop conditions |
-| `experiments/results/` | Result notes: claim, evidence, confounders, decision, next step |
-| `implementation/` | Design specs and implementation summaries by phase |
-| `research/` | Literature review, diagnosis, and comparative analysis |
-| `archive/` | Stale PRDs, debug checklists, old validation commands, session summaries |
-
-Use `../README.md` as the task entry point.
+| `experiments/` | Active and completed experiment specs, plans, and results |
+| `research/` | Current research notes that inform active decisions |
+| `reference/` | Migrated EAGLE3 usage guides and file-structure notes |
+| `archive/` | Historical implementation specs, old research, debug notes, and old PRDs |

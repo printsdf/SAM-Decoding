@@ -161,7 +161,7 @@ fusion_min_eagle_ratio: float = 0.7
 
 **原因**: SAM 在 HumanEval 上本身不适合
 
-**策略调整**: 
+**策略调整**:
 - 论文中报告：质量门控改善了稳定性
 - 但 naive fusion 仍不如 sam_sequence_graft
 - 为 Phase 3 (payoff-aware) 提供动机

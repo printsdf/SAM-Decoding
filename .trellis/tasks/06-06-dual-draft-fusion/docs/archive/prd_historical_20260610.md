@@ -74,19 +74,19 @@ context = {
 def compute_weights(context):
     w_eagle = 0.5
     w_sam = 0.5
-    
+
     # 代码生成 -> SAM 权重高
     if context.domain == "code": w_sam += 0.2
-    
+
     # 高熵 -> Eagle 权重高
     if context.entropy > θ_high: w_eagle += 0.2
-    
+
     # 长上下文 -> SAM 权重高
     if context.length > 4096: w_sam += 0.1 * (length/4096)
-    
+
     # SAM 匹配差 -> Eagle 权重高
     if context.sam_quality < θ_low: w_eagle += 0.3
-    
+
     return normalize(w_eagle, w_sam)
 ```
 
@@ -131,7 +131,7 @@ def compute_weights(context):
 - ✅ Eagle-only 分支正常：Mean accept=6.72
 - ❌ 性能仍未提升：即使 89% 用 Eagle-only，整体性能仍低
 
-**结论**: 
+**结论**:
 - **Naive fusion 根本性失败**：分数融合不准确是核心问题
 - **质量门控无法修复**：需要精准的 payoff 估计
 - **直接进入 Phase 3**：提取真实 logprob + payoff 校准
@@ -166,7 +166,7 @@ def topK_genrate(self, hidden_states, input_ids, head):
     probs = torch.softmax(logits, dim=-1)
     topk_probs, topk_indices = torch.topk(probs, k=self.top_k)
     topk_logprobs = torch.log(topk_probs)  # 新增
-    
+
     return draft_tokens, buffers, topk_logprobs  # 返回 logprob
 ```
 
@@ -187,7 +187,7 @@ class PayoffCalibrator:
         self.eagle_calibrator = IsotonicRegression()
         self.sam_calibrator = IsotonicRegression()
         self.history = {"eagle": [], "sam": []}
-    
+
     def update(self, verified_nodes):
         """在线更新校准模型"""
         for node in verified_nodes:
@@ -195,18 +195,18 @@ class PayoffCalibrator:
                 self.history["eagle"].append((node.logprob, node.accepted))
             else:
                 self.history["sam"].append((node.match_length, node.accepted))
-        
+
         # 每 N 步重新校准
         if len(self.history["eagle"]) % 100 == 0:
             self.recalibrate()
-    
+
     def predict_accept_prob(self, node) -> float:
         """统一接口：预测接受概率"""
         if node.source == "eagle":
             return self.eagle_calibrator.predict([node.logprob])[0]
         else:
             return self.sam_calibrator.predict([node.match_length])[0]
-    
+
     def compute_payoff(self, node) -> float:
         """期望 payoff = P(accept) * depth"""
         p_accept = self.predict_accept_prob(node)
@@ -236,19 +236,19 @@ def compute_fusion_weights(context):
     """
     w_eagle = 0.5
     w_sam = 0.5
-    
+
     # 代码任务 → SAM 权重高（重复性强）
     if context["domain"] == "code":
         w_sam += 0.2
-    
+
     # 高熵 → Eagle 权重高（需要多样性）
     if context["entropy"] > threshold_high:
         w_eagle += 0.2
-    
+
     # SAM 匹配差 → Eagle 权重高
     if context["sam_quality"] < threshold_low:
         w_eagle += 0.3
-    
+
     return normalize(w_eagle, w_sam)
 
 # 应用到融合
@@ -285,10 +285,10 @@ class PayoffCalibrator:
         self.eagle_history = []
         self.sam_history = []
         self.calibrator = IsotonicRegression()
-    
+
     def update(self, verified_nodes):
         # 记录 (score, accepted) pairs
-    
+
     def calibrate(self):
         # 每 N 步重新训练
 ```
@@ -304,18 +304,18 @@ class PayoffCalibrator:
 ```python
 def identify_insertion_points(eagle_tree, context):
     points = []
-    
+
     # 策略1: 根节点后备
     points.append(root_fallback())
-    
+
     # 策略2: 高置信度路径 -> sibling extension
     for node in high_confidence_leaves:
         points.append(sibling_insertion(node))
-    
+
     # 策略3: 低置信度路径 -> fallback path
     for node in low_confidence_nodes:
         points.append(fallback_insertion(node))
-    
+
     return top_k(points, by=priority)
 ```
 
@@ -349,12 +349,12 @@ metrics = {
     "speedup": tokens / (draft_time + verify_time),
     "MAT": mean_accepted_per_step,
     "verified_per_accepted": efficiency,
-    
+
     # 来源分析
     "eagle_contribution": accepted_from_eagle / total,
     "sam_contribution": accepted_from_sam / total,
     "agreement_rate": both_proposed_accepted / both_proposed,
-    
+
     # 校准质量
     "calibration_ECE": expected_calibration_error,
     "fusion_weight_trace": (w_eagle, w_sam) over time,

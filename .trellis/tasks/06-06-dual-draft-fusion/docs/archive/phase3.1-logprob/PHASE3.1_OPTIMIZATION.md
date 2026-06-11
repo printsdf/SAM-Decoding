@@ -111,20 +111,20 @@ python evaluation/inference_samd.py \
 ```python
 if samd_config.fusion_mode == "naive":
     start_token = sample_p.squeeze(0).argmax(-1).item()
-    
+
     # 延迟 SAM lookup：只在需要时才查询
     # index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)  # 移到这里之前
-    
+
     samd_len_threshold = getattr(samd_config, "samd_len_threshold", None)
     if samd_len_threshold is None:
         samd_len_threshold = samd_config.len_threshold
-    
+
     # 优化：如果 threshold 极高，直接跳过 SAM
     if samd_len_threshold >= 999999:
         # 完全跳过 SAM，直接 Eagle-only
         eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
         # ... 直接返回
-    
+
     # 正常融合路径才查询 SAM
     index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
     # ...
@@ -140,16 +140,16 @@ if samd_config.fusion_mode == "naive":
 def record_naive_fusion(self, metadata: Dict) -> None:
     if not self.fusion_stats.get("enabled"):
         return
-    
+
     # 只记录关键统计，减少字段
     self.fusion_stats["steps"] += 1
     self.fusion_stats["eagle_nodes_sum"] += int(metadata.get("eagle_nodes", 0))
     self.fusion_stats["sam_nodes_sum"] += int(metadata.get("sam_nodes", 0))
-    
+
     # 跳过详细字段（在非调试模式）
     if not samd_config.debug_mode:
         return
-    
+
     # 详细统计只在 debug 模式记录
     # ... 其他字段
 ```

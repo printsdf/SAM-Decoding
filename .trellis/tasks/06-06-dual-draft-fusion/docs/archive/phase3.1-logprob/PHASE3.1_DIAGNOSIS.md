@@ -150,14 +150,14 @@ def fuse_eagle_sam_naive(...):
     # 解析前
     eagle_nodes = parse_eagle_tree(eagle_tree, eagle_logprobs)
     sam_nodes = parse_sam_sequence(sam_candidates)
-    
+
     # 添加统计
     print(f"[SCORE] Eagle raw logprobs: min={min(n.score for n in eagle_nodes):.2f}, max={max(n.score for n in eagle_nodes):.2f}")
     print(f"[SCORE] SAM raw match_length: min={min(n.score for n in sam_nodes):.2f}, max={max(n.score for n in sam_nodes):.2f}")
-    
+
     # 归一化后
     # ... normalize_scores(eagle_nodes, sam_nodes)
-    
+
     print(f"[SCORE] Eagle normalized: min={min(n.norm_score for n in eagle_nodes):.2f}, max={max(n.norm_score for n in eagle_nodes):.2f}")
     print(f"[SCORE] SAM normalized: min={min(n.norm_score for n in sam_nodes):.2f}, max={max(n.norm_score for n in sam_nodes):.2f}")
 ```

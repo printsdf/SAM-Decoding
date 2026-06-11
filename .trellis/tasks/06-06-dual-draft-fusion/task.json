@@ -2,7 +2,7 @@
   "id": "dual-draft-fusion",
   "name": "dual-draft-fusion",
   "title": "Dual draft fusion research and oracle gates",
-  "description": "Evaluate SAM + EAGLE3 dual-draft fusion. Naive/logprob fusion is a negative or neutral baseline; current decision is the MT-Bench depth-decoupled oracle gate after MedQA rejected the direction.",
+  "description": "Evaluate SAM + EAGLE3 dual-draft fusion. Naive/logprob and depth-decoupled fusion are rejected or neutral; current work is Phase A oracle validation for rejection-boundary repair and high-precision SAM.",
   "status": "in_progress",
   "dev_type": "research",
   "scope": "backend",
@@ -24,13 +24,17 @@
     ".trellis/tasks/06-06-dual-draft-fusion/README.md",
     ".trellis/tasks/06-06-dual-draft-fusion/prd.md",
     ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/README.md",
-    ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/specs/2026-06-10-depth-decoupled-oracle.md",
-    ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/plans/2026-06-10-depth-decoupled-oracle.md",
+    ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/specs/2026-06-11-phase2-boundary-graft.md",
+    ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-humaneval-oracle-results.md",
+    ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-mtbench-depth-decoupled-oracle.md",
     ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-medqa-depth-decoupled-oracle.md",
     ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-09-mtbench-naive-logprob-profile.md",
+    ".trellis/tasks/06-06-dual-draft-fusion/docs/research/2026-06-10-rejection-boundary-novelty-analysis.md",
+    ".trellis/tasks/06-06-dual-draft-fusion/docs/reference/README.md",
     ".trellis/spec/backend/tree-fusion.md",
-    ".trellis/spec/backend/evaluation-protocols.md"
+    ".trellis/spec/backend/evaluation-protocols.md",
+    ".trellis/spec/backend/directory-structure.md"
   ],
-  "notes": "Docs reorganized on 2026-06-10: README.md and prd.md are the current entry points; experiment specs/plans/results live under docs/experiments/; older phase/debug documents live under docs/archive/.",
+  "notes": "Docs reorganized on 2026-06-11: README.md and prd.md are the only current entry points; active experiments live under task-local docs/experiments/; current research notes live under task-local docs/research/; reference guides live under task-local docs/reference/; historical material lives under task-local docs/archive/. Do not recreate repository-root docs/.",
   "meta": {}
 }

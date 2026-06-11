@@ -5,4 +5,6 @@
 {"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General test and review expectations for Python research code changes."}
 {"file": ".trellis/tasks/06-06-dual-draft-fusion/README.md", "reason": "Task index and latest handoff context."}
 {"file": ".trellis/tasks/06-06-dual-draft-fusion/prd.md", "reason": "Current task requirements, decisions, and open questions."}
-{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-09-mtbench-naive-logprob-profile.md", "reason": "Latest confirmed Phase 3.1 MT-Bench results and reproducibility caveats."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-humaneval-oracle-results.md", "reason": "Phase B gate evidence and expected HumanEval improvement ceiling."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/specs/2026-06-11-phase2-boundary-graft.md", "reason": "Current implementation design, metrics, and stop conditions."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify docs remain task-local and root docs are not recreated."}

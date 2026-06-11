@@ -53,10 +53,10 @@ if samd_config.fusion_mode == "naive":
     index_static, match_static_raw = draft.sam_static.lookup(start_token)
     match_static = match_static_raw - draft.len_bias
     best_match = max(match_dyn, match_static)
-    
+
     # 添加 debug 日志
     print(f"[DEBUG] start_token={start_token}, match_dyn={match_dyn}, match_static={match_static}, best_match={best_match}, threshold={samd_len_threshold}")
-    
+
     if best_match < samd_len_threshold:
         print(f"[DEBUG] SAM SKIPPED: best_match={best_match} < threshold={samd_len_threshold}")
         # ... Eagle-only 分支

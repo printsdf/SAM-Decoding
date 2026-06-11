@@ -138,7 +138,7 @@ def has_close_elements(numbers: List[float], threshold: float) -> bool:
     given threshold.
     >>> has_close_elements([1.0, 2.0, 3.0], 0.5)
     False
-    \"\"\" 
+    \"\"\"
 """
 
 # 动态 SAM 能学到的模式：
@@ -297,7 +297,7 @@ def sort_by_score(nodes):
     # 分别归一化
     eagle_scores = normalize([n.score for n in eagle_nodes])
     sam_scores = normalize([n.score for n in sam_nodes])
-    
+
     # 合并排序
     all_scores = eagle_scores + sam_scores
     return sorted(nodes, key=lambda n: n.normalized_score, reverse=True)
@@ -364,7 +364,7 @@ def fuse_with_payoff(eagle_nodes, sam_nodes, context):
         # 统一目标：期望接受 token 数
         node.payoff = estimate_payoff(node, context)
         # payoff = P(accept) × depth
-    
+
     # 前缀闭包约束下选择高 payoff 节点
     selected = select_with_prefix_closure(all_nodes, budget=60)
     return selected
@@ -375,7 +375,7 @@ def estimate_payoff(node, context):
         p_accept = calibrate_eagle(node.logprob, context)
     else:  # SAM
         p_accept = calibrate_sam(node.match_length, context)
-    
+
     return p_accept * node.depth
 ```
 
@@ -400,11 +400,11 @@ def topK_genrate(self, hidden_states, input_ids, head):
     # 现有代码已经计算了 logits
     logits = self.lm_head(hidden_states)
     probs = torch.softmax(logits, dim=-1)
-    
+
     # 添加：返回 topk 的 logprob
     topk_probs, topk_indices = torch.topk(probs, k=self.top_k)
     topk_logprobs = torch.log(topk_probs)
-    
+
     return draft_tokens, buffers, topk_logprobs  # 新增返回
 
 # 修改 samd/tree_model/eagle3/eagle3.py
@@ -444,29 +444,29 @@ class PayoffCalibrator:
         self.sam_calibrator = IsotonicRegression()
         self.history_eagle = []
         self.history_sam = []
-    
+
     def update(self, verified_nodes):
         for node in verified_nodes:
             if node.source == "eagle":
                 self.history_eagle.append((node.logprob, node.accepted))
             else:
                 self.history_sam.append((node.match_length, node.accepted))
-        
+
         # 每 N 步重新校准
         if len(self.history_eagle) % 100 == 0:
             self.recalibrate()
-    
+
     def recalibrate(self):
         if len(self.history_eagle) > 50:
             X = [x[0] for x in self.history_eagle]
             y = [x[1] for x in self.history_eagle]
             self.eagle_calibrator.fit(X, y)
-        
+
         if len(self.history_sam) > 50:
             X = [x[0] for x in self.history_sam]
             y = [x[1] for x in self.history_sam]
             self.sam_calibrator.fit(X, y)
-    
+
     def predict_accept_prob(self, node):
         if node.source == "eagle":
             return self.eagle_calibrator.predict([node.logprob])[0]
@@ -487,15 +487,15 @@ class PayoffCalibrator:
 def compute_fusion_weights(context):
     w_eagle = 0.5
     w_sam = 0.5
-    
+
     # 代码任务 → SAM 权重高
     if detect_code_task(context):
         w_sam += 0.2
-    
+
     # 高熵 → Eagle 权重高
     if compute_entropy(context) > threshold:
         w_eagle += 0.2
-    
+
     return normalize(w_eagle, w_sam)
 
 # 融合时应用权重

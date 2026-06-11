@@ -71,7 +71,7 @@ def fuse_eagle_sam_naive(
 ) -> FusedTree:
     """
     Naive fusion: 简单合并 + 去重 + 截断
-    
+
     算法步骤:
     1. 解析 Eagle tree 为 node list
     2. 解析 SAM sequence 为 node list
@@ -79,7 +79,7 @@ def fuse_eagle_sam_naive(
     4. 排序：按 score 降序
     5. 截断：保留前 max_draft_tokens 个
     6. 构建 tree buffers
-    
+
     Args:
         eagle_tree: {
             "tokens": torch.Tensor,  # [N_eagle]
@@ -90,56 +90,56 @@ def fuse_eagle_sam_naive(
         sam_candidates: [start_token, t1, t2, ...]  # 线性序列
         start_token: root token
         config: 融合配置
-    
+
     Returns:
         FusedTree: 融合后的树结构
     """
     # Step 1: 解析 Eagle tree
     eagle_nodes = parse_eagle_tree(eagle_tree, start_token)
-    
+
     # Step 2: 解析 SAM sequence
     sam_nodes = parse_sam_sequence(sam_candidates, start_token)
-    
+
     # Step 3: 合并去重
     merged_nodes = merge_and_dedup(
-        eagle_nodes, 
-        sam_nodes, 
+        eagle_nodes,
+        sam_nodes,
         strategy=config.dedup_strategy
     )
-    
+
     # Step 4: 排序
     sorted_nodes = sort_by_score(merged_nodes)
-    
+
     # Step 5: 截断
     if len(sorted_nodes) > config.max_draft_tokens:
         selected_nodes = truncate_with_ancestors(
-            sorted_nodes, 
+            sorted_nodes,
             config.max_draft_tokens
         )
     else:
         selected_nodes = sorted_nodes
-    
+
     # Step 6: 构建 tree buffers
     fused_tree = build_tree_buffers(selected_nodes, start_token)
-    
+
     return fused_tree
 
 
 def parse_eagle_tree(eagle_tree: Dict, start_token: int) -> List[CandidateNode]:
     """
     将 Eagle3 的树结构解析为 node list
-    
+
     Eagle3 输出格式:
     - tokens: [N] flattened tree tokens
     - tree_mask: [N, N] attention mask (lower triangular + tree structure)
     - position_ids: [N] relative positions
     - retrieve_indices: [M] indices to extract candidate logits
-    
+
     需要反向推导:
     - 从 tree_mask 推导父子关系
     - 从 retrieve_indices 推导哪些是 candidate nodes
     - 计算每个 node 的路径和深度
-    
+
     Returns:
         List[CandidateNode]: 包含所有 Eagle nodes
     """
@@ -149,15 +149,15 @@ def parse_eagle_tree(eagle_tree: Dict, start_token: int) -> List[CandidateNode]:
 def parse_sam_sequence(sam_candidates: List[int], start_token: int) -> List[CandidateNode]:
     """
     将 SAM 的线性序列解析为 node list
-    
+
     SAM 输出格式:
     - [start_token, t1, t2, ..., tn]  # 简单的线性序列
-    
+
     转换为树结构:
     - 每个 token 的 path = [start_token, t1, ..., t_{i-1}]
     - depth = index
     - score = len(sam_candidates) - index  (简单的匹配长度估计)
-    
+
     Returns:
         List[CandidateNode]: 包含所有 SAM nodes
     """
@@ -183,13 +183,13 @@ def merge_and_dedup(
 ) -> List[CandidateNode]:
     """
     合并并去重
-    
+
     去重规则:
     - 相同 (path, token) 的节点视为重复
     - max_score: 保留分数最高的
     - sum_score: 合并分数并标记来源
     - keep_both: 保留两者（不去重，用于消融实验）
-    
+
     Returns:
         List[CandidateNode]: 去重后的节点列表
     """
@@ -199,10 +199,10 @@ def merge_and_dedup(
 def sort_by_score(nodes: List[CandidateNode]) -> List[CandidateNode]:
     """
     按分数降序排序
-    
+
     注意: Eagle 的 score 是 logprob (负数)，SAM 的 score 是 match_length (正数)
     需要归一化到统一尺度
-    
+
     简单做法: 分别归一化到 [0, 1]
     """
     pass  # 实现细节
@@ -214,12 +214,12 @@ def truncate_with_ancestors(
 ) -> List[CandidateNode]:
     """
     截断到 max_tokens，同时保证祖先节点存在（前缀闭包）
-    
+
     算法:
     1. 贪心选择高分节点
     2. 如果选中一个节点，确保其所有祖先都被选中
     3. 如果加上祖先会超预算，跳过该节点
-    
+
     Returns:
         List[CandidateNode]: 截断后的节点列表（保证前缀闭包）
     """
@@ -232,9 +232,9 @@ def build_tree_buffers(
 ) -> FusedTree:
     """
     从 node list 构建树的 attention mask, position_ids, retrieve_indices
-    
+
     输出格式需要与 Eagle3 兼容，以便直接输入到 target model 验证
-    
+
     Returns:
         FusedTree: 包含所有必要的 buffers
     """
@@ -259,37 +259,37 @@ def gen_candidates(
 ):
     """
     生成候选 tokens
-    
+
     新增参数:
     - samd_config.fusion_mode: "none" | "naive" | "payoff_aware" | "tree_aware"
     - samd_config.fusion_config: FusionConfig
     """
     start_token = sample_p.squeeze(0).argmax(-1).item()
-    
+
     # 检查是否启用 fusion
     if samd_config.fusion_mode == "none":
         # 原有逻辑：根据 SAM 匹配质量决定用 Eagle 还是 SAM
         # ... (保持不变)
         pass
-    
+
     elif samd_config.fusion_mode == "naive":
         # Naive fusion: 并行生成 Eagle + SAM，然后合并
-        
+
         # Step 1: 生成 Eagle tree
         eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
         eagle_tree = {
             "tokens": torch.tensor(eagle_pred_ids, device=device),
             **eagle_buffers,
         }
-        
+
         # Step 2: 生成 SAM sequence
         sam_index, sam_length = draft.sam.lookup(start_token)
         sam_candidates = draft.sam.gen_draft_raw(
-            sam_index, 
-            start_token, 
+            sam_index,
+            start_token,
             max_len=samd_config.n_predicts
         )
-        
+
         # Step 3: 融合
         fusion_config = samd_config.fusion_config or FusionConfig()
         fused_tree = fuse_eagle_sam_naive(
@@ -298,7 +298,7 @@ def gen_candidates(
             start_token=start_token,
             config=fusion_config,
         )
-        
+
         # Step 4: 构建返回值
         return Candidates(
             type=CandidateType.tree,
@@ -311,7 +311,7 @@ def gen_candidates(
             },
             metadata=fused_tree.metadata,
         )
-    
+
     else:
         raise ValueError(f"Unknown fusion_mode: {samd_config.fusion_mode}")
 ```
@@ -324,13 +324,13 @@ def gen_candidates(
 @dataclass
 class SamdConfig:
     # ... 现有字段 ...
-    
+
     # Fusion 相关配置
     fusion_mode: Literal["none", "naive", "payoff_aware", "tree_aware"] = "none"
     fusion_max_draft_tokens: int = 60
     fusion_dedup_strategy: Literal["max_score", "sum_score", "keep_both"] = "max_score"
     fusion_truncate_strategy: Literal["score", "depth_first"] = "score"
-    
+
     @property
     def fusion_config(self) -> Optional[FusionConfig]:
         if self.fusion_mode == "none":
@@ -405,7 +405,7 @@ def test_full_decode_with_fusion():
 
 # 对比实验：
 # 1. Eagle3-only
-# 2. SAM-only  
+# 2. SAM-only
 # 3. Naive fusion (max_score)
 # 4. Naive fusion (sum_score)
 # 5. Naive fusion (keep_both)

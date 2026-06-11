@@ -34,8 +34,7 @@ evaluation/model/            Vendored or legacy baseline model implementations
 scripts/                     Shell entry points for smoke tests and benchmark batches
 tools/                       Offline Static SAM corpus/artifact tools
 tests/                       Pytest and executable integration checks
-docs/                        Usage guides and cross-task experiment specs/results
-.trellis/tasks/<task>/docs/   Task-local research specs, plans, results, and archives
+.trellis/tasks/<task>/docs/   Task-local research specs, plans, results, usage guides, and archives
 ```
 
 ## Module Organization
@@ -61,11 +60,94 @@ docs/                        Usage guides and cross-task experiment specs/result
 * `tree_fusion` selects candidate-combination strategy (`none`,
   `sam_sequence_graft`, `sam_tree_union_prune`, `eagle_prefix_sam_expand`).
 * Do not encode fusion variants as new `tree_method` values.
-* Cross-task experiment docs stay under `docs/experiments/` with date-prefixed
-  filenames. Task-specific experiment docs belong under
-  `.trellis/tasks/<task>/docs/experiments/{specs,plans,results}/`; keep the
-  task root limited to the current `README.md`, `prd.md`, Trellis metadata, and
-  task-local scripts.
+* Do not create a repository-root `docs/` directory for durable project or
+  experiment notes. Put task-related docs under
+  `.trellis/tasks/<task>/docs/`; put durable implementation rules under
+  `.trellis/spec/`.
+* Experiment docs belong under
+  `.trellis/tasks/<task>/docs/experiments/{specs,plans,results}/` with
+  date-prefixed filenames. Keep the task root limited to the current
+  `README.md`, `prd.md`, Trellis metadata, and task-local scripts.
+* Do not create task-root scratch files such as `*_results.md`, `notes/`,
+  `research/`, or `experiments/`. Move current research notes to
+  `.trellis/tasks/<task>/docs/research/`, completed result notes to
+  `.trellis/tasks/<task>/docs/experiments/results/`, and stale/debug material to
+  `.trellis/tasks/<task>/docs/archive/`.
+
+### Convention: Task Research Docs
+
+**What**: A research task should have exactly one dashboard at task-root
+`README.md` and one current PRD at task-root `prd.md`. The rest of the task
+knowledge lives under task-local `docs/`.
+
+**Why**: Long-running research tasks often accumulate phase notes, debug
+checklists, result summaries, and new-direction notes. Keeping those at the task
+root creates conflicting entry points and stale "current" states.
+
+**Example**:
+
+```text
+# Good
+.trellis/tasks/06-06-example/
+  README.md
+  prd.md
+  task.json
+  implement.jsonl
+  check.jsonl
+  docs/
+    experiments/
+      specs/
+      plans/
+      results/
+    research/
+    archive/
+    reference/
+
+# Bad
+.trellis/tasks/06-06-example/
+  README.md
+  prd.md
+  mt_bench_results.md
+  next_steps.md
+  research/
+  notes/
+```
+
+**Related**: Use `docs/experiments/README.md` as the experiment table, not as a
+second task dashboard.
+
+### Convention: No Root Docs Directory
+
+**What**: Do not add or restore a top-level `docs/` directory for this project.
+Use these destinations instead:
+
+```text
+.trellis/tasks/<task>/docs/experiments/specs/    Experiment designs
+.trellis/tasks/<task>/docs/experiments/plans/    Execution plans
+.trellis/tasks/<task>/docs/experiments/results/  Result notes
+.trellis/tasks/<task>/docs/research/             Active research notes
+.trellis/tasks/<task>/docs/reference/            Usage guides tied to the task
+.trellis/tasks/<task>/docs/archive/              Historical or stale material
+.trellis/spec/                                   Durable implementation rules
+```
+
+**Why**: This repository runs long research tasks. A separate root `docs/`
+folder hides task provenance and creates multiple competing documentation
+entry points.
+
+**Wrong**:
+
+```text
+docs/experiments/results/2026-06-11-new-result.md
+docs/EAGLE3_TAIL_USAGE.md
+```
+
+**Correct**:
+
+```text
+.trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-11-new-result.md
+.trellis/tasks/06-06-dual-draft-fusion/docs/reference/EAGLE3_TAIL_USAGE.md
+```
 
 ## Examples
 

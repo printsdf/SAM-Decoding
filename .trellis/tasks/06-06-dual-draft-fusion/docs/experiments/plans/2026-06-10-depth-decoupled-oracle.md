@@ -21,7 +21,7 @@ oracle analysis. Expected GPU runtime depends on host, but the runner uses
 | `scripts/profile_fusion_mt_bench.sh` | Generates MT-Bench fusion profile trace and base oracle table |
 | `evaluation/oracle_depth_decoupled.py` | Sweeps `D_split` for depth-decoupled oracle |
 | `evaluation/oracle_fusion_analysis.py` | Shared profile loader and non-depth oracle baseline |
-| `docs/experiments/results/` | Destination for the final result note |
+| `.trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/` | Destination for the final result note |
 
 ## Remote Setup
 
