@@ -10,6 +10,7 @@ spec -> plan -> run -> result -> keep/rerun/debug/reject
 
 | Experiment | Spec | Plan | Result |
 | --- | --- | --- | --- |
+| Drafter-MARS SAM gate | `specs/2026-06-11-drafter-mars-sam-gate.md` | Pending | Pending |
 | Boundary predictor calibration | `specs/2026-06-11-boundary-predictor-calibration.md` | `plans/2026-06-11-boundary-predictor-calibration.md` | `results/2026-06-11-boundary-predictor-calibration.md` |
 
 ## Closed
