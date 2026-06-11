@@ -10,7 +10,7 @@ spec -> plan -> run -> result -> keep/rerun/debug/reject
 
 | Experiment | Spec | Plan | Result |
 | --- | --- | --- | --- |
-| Predicted-boundary SAM grafting | `specs/2026-06-11-phase2-boundary-graft.md` | In spec | Pending |
+| Boundary predictor calibration | `specs/2026-06-11-boundary-predictor-calibration.md` | `plans/2026-06-11-boundary-predictor-calibration.md` | `results/2026-06-11-boundary-predictor-calibration.md` |
 
 ## Closed
 
@@ -32,6 +32,7 @@ spec -> plan -> run -> result -> keep/rerun/debug/reject
 
 | Experiment | Spec | Plan |
 | --- | --- | --- |
+| Superseded Phase 2 depth-only boundary graft | `specs/2026-06-11-phase2-boundary-graft.md` | Superseded by boundary predictor calibration |
 | Phase A alternative oracles | `specs/2026-06-10-phase-a-alternative-oracles.md` | `plans/2026-06-10-phase-a-alternative-oracles.md` |
 | Rejection-boundary SAM repair | `specs/2026-06-10-rejection-boundary-sam-repair.md` | In spec |
 | Depth-decoupled oracle | `specs/2026-06-10-depth-decoupled-oracle.md` | `plans/2026-06-10-depth-decoupled-oracle.md` |
