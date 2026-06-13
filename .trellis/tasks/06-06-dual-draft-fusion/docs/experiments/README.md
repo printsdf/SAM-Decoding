@@ -10,13 +10,13 @@ spec -> plan -> run -> result -> keep/rerun/debug/reject
 
 | Experiment | Spec | Plan | Result |
 | --- | --- | --- | --- |
-| Drafter-MARS SAM gate | `specs/2026-06-11-drafter-mars-sam-gate.md` | `plans/2026-06-11-drafter-mars-sam-gate.md` | Pending |
-| Boundary predictor calibration | `specs/2026-06-11-boundary-predictor-calibration.md` | `plans/2026-06-11-boundary-predictor-calibration.md` | `results/2026-06-11-boundary-predictor-calibration.md` |
+| Drafter-MARS SAM gate | `specs/2026-06-11-drafter-mars-sam-gate.md` | `plans/2026-06-11-drafter-mars-sam-gate.md` | Pending q0-20 smoke |
 
 ## Closed
 
 | Experiment | Result | Decision |
 | --- | --- | --- |
+| Boundary predictor calibration | `results/2026-06-11-boundary-predictor-calibration.md` | Redesign, unconditioned low-margin trigger reached `99.89%` held-out trigger rate |
 | HumanEval rejection-boundary oracle | `results/2026-06-10-humaneval-oracle-results.md` | Proceed, rejection-boundary gap `+9.65%` |
 | MT-Bench depth-decoupled oracle | `results/2026-06-10-mtbench-depth-decoupled-oracle.md` | Reject, gap `+0.61%` < 3% |
 | MedQA depth-decoupled oracle | `results/2026-06-10-medqa-depth-decoupled-oracle.md` | Reject, gap `+0.00%` |
@@ -33,6 +33,7 @@ spec -> plan -> run -> result -> keep/rerun/debug/reject
 
 | Experiment | Spec | Plan |
 | --- | --- | --- |
+| Boundary predictor calibration | `specs/2026-06-11-boundary-predictor-calibration.md` | `plans/2026-06-11-boundary-predictor-calibration.md` |
 | Superseded Phase 2 depth-only boundary graft | `specs/2026-06-11-phase2-boundary-graft.md` | Superseded by boundary predictor calibration |
 | Phase A alternative oracles | `specs/2026-06-10-phase-a-alternative-oracles.md` | `plans/2026-06-10-phase-a-alternative-oracles.md` |
 | Rejection-boundary SAM repair | `specs/2026-06-10-rejection-boundary-sam-repair.md` | In spec |

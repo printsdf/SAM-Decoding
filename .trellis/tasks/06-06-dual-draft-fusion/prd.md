@@ -1,7 +1,7 @@
 # Dual Draft Fusion PRD
 
-Status: in progress — Phase B approved
-Last updated: 2026-06-10
+Status: in progress — Phase B offline gate
+Last updated: 2026-06-13
 Task: `dual-draft-fusion`
 
 ## Problem
@@ -64,12 +64,38 @@ Code generation has 3x the oracle ceiling of dialogue tasks.
 
 ## Phase B: Implementation Plan
 
-Target: implement rejection-boundary SAM repair and measure real speedup.
+Target: implement rejection-boundary SAM repair and measure real speedup, but
+only after an offline predictor gate passes.
 
-1. Predict EAGLE rejection depth using draft confidence signals
-2. Insert SAM candidates at predicted rejection point
-3. Verify combined tree with standard speculative decoding verification
-4. Measure TPS on HumanEval (target: > eagle_only * 1.05)
+Current sequence:
+
+1. Calibrate a sparse rejection-boundary predictor from HumanEval profile
+   traces.
+2. Use Drafter-MARS style EAGLE3 raw-logit top-1/top-2 ratios as the active
+   q0-20 smoke experiment.
+3. If the smoke passes, run full HumanEval q0-164 calibration.
+4. Only after offline gates pass, implement online SAM boundary grafting.
+5. Measure trace-off TPS on HumanEval (target: `> eagle_only * 1.05`).
+
+## Current Status
+
+The previous unconditioned low-margin boundary-predictor smoke is closed as a
+diagnostic failure. It improved oracle MAT on q10-20 but triggered on `99.89%`
+of held-out decode steps, which degenerates into always-on SAM repair.
+
+The active experiment is now:
+
+```text
+Drafter-MARS SAM gate
+HumanEval q0-20 smoke
+train: q0-10
+heldout: q10-20
+predictor-suite: drafter_mars
+```
+
+This experiment uses EAGLE3 drafter raw logits, not target logits and not the
+old unconditioned sibling margin, to test whether a top-path or reachable-parent
+adaptive margin can trigger SAM sparsely.
 
 ## Non-Goals
 
@@ -80,6 +106,11 @@ Target: implement rejection-boundary SAM repair and measure real speedup.
 
 ## Next Step
 
-Phase B implementation: Rejection-Boundary SAM Repair on HumanEval.
-Novelty check pending — verify no prior work on rejection-aware retrieval-draft
-fusion in speculative decoding.
+Run the Drafter-MARS q0-20 smoke trace and analyzer sweep from:
+
+```text
+docs/experiments/plans/2026-06-11-drafter-mars-sam-gate.md
+```
+
+Do not implement online `fusion_mode="boundary_graft"` or report throughput
+speedup until the offline Drafter-MARS gate passes.
