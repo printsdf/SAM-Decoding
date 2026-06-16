@@ -26,7 +26,7 @@ samd/
     token_recycle/           Token Recycle draft model integration
     eagle/                   EAGLE-1 integration
     eagle2/                  EAGLE-2 integration
-    eagle3/                  EAGLE-3 integration and optional tail sidecar
+    eagle3/                  EAGLE-3 integration
 
 samd_sam_only/               SAM-only optimized path, independent from tree_method
 evaluation/                  Spec-Bench/MT-Bench/MedQA/MedQuAD inference and analysis

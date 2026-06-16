@@ -13,6 +13,22 @@ Any `samd` import or test path depends on these packages:
 Missing packages can fail immediately at import time. Do not run or report SAMD
 tests as meaningful unless these dependencies are installed.
 
+## Remote Execution Policy
+
+The local checkout is the default surface for reading, editing, and static
+checks. Do not attempt remote access by default.
+
+Remote actions require an explicit user request in the current turn, including:
+
+* `ssh` or `scp`
+* inspecting remote files or worktrees
+* running model-dependent validation or evaluation remotely
+
+When a check depends on the model environment, prepare the exact command and
+mark the validation as remote-required instead of running it. If a local command
+fails because dependencies such as `torch`, `transformers`, or `safetensors` are
+missing, do not automatically retry on the remote server.
+
 ## Transformers Version Pin
 
 SAMD monkey patches copy and modify HuggingFace Llama internals from

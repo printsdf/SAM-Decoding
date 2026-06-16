@@ -318,6 +318,24 @@ predicted-boundary oracle selectors. Keep `--node-budget` aligned with
 boundary oracle MAT larger than the same-budget perfect MAT is an analyzer bug,
 not a model result.
 
+Before interpreting a boundary-predictor gate as positive or negative, record
+the same-trace EAGLE-only, perfect, and rejection-boundary oracle MAT. If the
+same-trace perfect/rejection-boundary ceiling is far below the established
+baseline for that dataset, treat the predictor result as a trace/provenance
+debug result until the ceiling is explained. A predictor cannot recover SAM
+value that the profile did not record.
+
+Boundary-predictor profile runners must preflight all directly invoked analysis
+scripts before model execution and fail immediately if a required script is
+missing. They must also write a provenance artifact with git commit/status,
+question-file row count/hash, split ranges, and key draft/fusion/analyzer
+parameters before starting the model run.
+
+The profile oracle is a recorded-candidate oracle. It only sees candidates
+emitted into the fusion profile JSON. If the generation path skips SAM candidate
+construction for low match quality, the same-trace perfect ceiling may be lower
+than a different trace that recorded more SAM candidates.
+
 Threshold selection must first prefer rows satisfying the training trigger-rate
 and precision constraints. If no row satisfies those constraints, the analyzer
 may report the best unconstrained row only as a diagnostic and must mark it as
@@ -330,6 +348,11 @@ unconstrained in the output.
 * missing node-level EAGLE fields -> analyzer error.
 * old profile traces without enriched fields -> analyzer error, not silent
   depth-only fallback.
+* missing standalone rejection-boundary oracle artifact -> result package is
+  incomplete; do not close the predictor family as a clean negative until the
+  same-trace ceiling is checked.
+* runner direct-calls an analysis script that is absent from the checkout ->
+  fail during preflight before any model load.
 * probability threshold outside `[0, 1]` -> `ValueError`.
 * dense threshold candidate set -> quantile/downsampled grid capped by
   `--max-thresholds`.

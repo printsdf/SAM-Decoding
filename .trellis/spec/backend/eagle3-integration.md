@@ -75,25 +75,22 @@ the sizes are equal, preserve the official simplification path.
 
 When an official checkpoint omits `d2t`/`t2d` because `draft_vocab_size ==
 vocab_size`, default `t2d` must be all `True`, not all `False`. This preserves
-identity reachability for diagnosis traces and prevents later sidecar code from
-misclassifying the whole vocabulary as V_miss.
+identity reachability for diagnosis traces and reduced-vocabulary accounting.
 
-## Tail Sidecar Tree-Budget Contract
+## EAGLE3 Tree-Budget Contract
 
 ### 1. Scope / Trigger
 
-This contract applies when wiring EAGLE3 tail sidecar inference into SAMD or
-running official-tail comparisons. It was added because the official tail eval
-uses a different EAGLE3 tree budget than the old cnets defaults, and mismatched
-budgets can look like a tail quality bug.
+This contract applies when configuring EAGLE3 draft generation from SAMD entry
+points. EAGLE3's tree budget must be explicit because different defaults
+(`63/5/8` from older cnets code vs `60/7/10` used by current SAMD experiments)
+change the candidate tree and can confound fusion or acceptance analysis.
 
 ### 2. Signatures
 
 `SamdConfig` must expose these EAGLE3-only fields:
 
 ```python
-eagle3_tail_path: Optional[str] = None
-eagle3_tail_type: Literal["auto", "plain", "tucker"] = "auto"
 eagle3_total_token: int = 60
 eagle3_depth: int = 7
 eagle3_top_k: int = 10
@@ -103,16 +100,17 @@ eagle3_top_k: int = 10
 must accept matching flags:
 
 ```text
---eagle3_tail_path
---eagle3_tail_type
 --eagle3_total_token
 --eagle3_depth
 --eagle3_top_k
 ```
 
+They must not accept or forward `--eagle3_tail_path` or `--eagle3_tail_type`;
+tail sidecar inference is not part of the active EAGLE3 integration.
+
 ### 3. Contracts
 
-The official tail comparison budget is:
+The active SAMD EAGLE3 budget is:
 
 ```text
 total_token=60, depth=7, top_k=10
@@ -128,29 +126,34 @@ EAGLE3_TOP_K=10
 
 and pass those values through to `evaluation.inference_samd`. These are separate
 from SAM fusion budgets such as `sam_tree_top_k` and `sam_prefix_top_k`.
+`Eagle3.__init__` must always initialize the ordinary EAGLE3 tree with
+`self.model.init_tree()` after loading weights and copying compatible base
+embeddings.
 
 ### 4. Validation & Error Matrix
 
-* `eagle3_tail_path == ""` -> normalize to `None`.
-* `eagle3_tail_path is not None` with `tree_method != "eagle3"` -> `ValueError`.
-* `eagle3_tail_type` outside `auto/plain/tucker` -> `ValueError`.
 * non-positive or boolean `eagle3_total_token`, `eagle3_depth`, or
   `eagle3_top_k` -> `ValueError`.
+* passing removed CLI flags such as `--eagle3_tail_path` -> argparse error.
+* reintroducing an import from `samd.tree_model.eagle3.tail_sidecar` without a
+  tracked module and tests -> invalid; remove the import or restore the complete
+  feature intentionally.
 
 ### 5. Good/Base/Bad Cases
 
-* Good: official-tail eval passes `60/7/10` and sees the EAGLE3 load log print
-  those values.
-* Base: no tail path uses the same tree-budget fields for pure EAGLE3 baseline.
-* Bad: using old `63/5/8` cnets defaults while comparing against official tail
-  numbers; this changes the candidate tree and can depress accept length.
+* Good: EAGLE3 baseline and fusion runs both pass `60/7/10` and see the EAGLE3
+  load log print those values.
+* Base: a pure EAGLE3 run omits the flags and uses `60/7/10` from
+  `SamdConfig`.
+* Bad: a shell wrapper keeps forwarding `EAGLE3_TAIL_PATH` into
+  `evaluation.inference_samd`; the entry point should reject that stale flag.
 
 ### 6. Tests Required
 
 * Syntax-check modified runners with `bash -n`.
 * Compile changed Python entry points with `python -m compileall`.
-* In a model environment, run baseline and tail with the same `60/7/10` budget
-  before attributing accept-length deltas to tail quality.
+* In a model environment, run EAGLE3 baseline and fusion variants with the same
+  `60/7/10` budget before attributing accept-length deltas to fusion quality.
 
 ### 7. Wrong vs Correct
 
@@ -160,12 +163,11 @@ Wrong:
 python -m evaluation.inference_samd --tree_method eagle3 --eagle3_tail_path tail.pt
 ```
 
-Correct for official-tail comparison:
+Correct:
 
 ```bash
 python -m evaluation.inference_samd \
   --tree_method eagle3 \
-  --eagle3_tail_path tail.pt \
   --eagle3_total_token 60 \
   --eagle3_depth 7 \
   --eagle3_top_k 10
@@ -179,5 +181,5 @@ python -m evaluation.inference_samd \
 * Is `embed_tokens.weight` missing handled as expected?
 * Does `stable_kv` incremental behavior remain intact?
 * Are `d2t`/`t2d` mappings preserved for reduced draft vocab checkpoints?
-* Are EAGLE3 tail/baseline comparisons using the same `total_token/depth/top_k`
-  budget, preferably the official `60/7/10` setting?
+* Are EAGLE3 baseline/fusion comparisons using the same `total_token/depth/top_k`
+  budget, preferably the current `60/7/10` setting?
