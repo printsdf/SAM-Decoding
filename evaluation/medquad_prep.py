@@ -12,9 +12,9 @@ Output schema per line:
 
 The prompt template is intentionally free-form: the patient question is fed
 verbatim as ``turns[0]`` so the chat template wraps it as a user turn and the
-model answers naturally. No multiple-choice scaffolding (see
-``.codestable/features/2026-05-25-bench-cross-domain-speedup/bench-cross-domain-speedup-design.md``
-section 1 D1).
+model answers naturally. No multiple-choice scaffolding; see
+``.trellis/spec/backend/evaluation-protocols.md`` for the free-form V_miss
+benchmark rationale.
 """
 import argparse
 import json

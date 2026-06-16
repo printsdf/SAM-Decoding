@@ -1,9 +1,7 @@
 """Convert HuggingFace bigbio/med_qa USMLE-style MCQ into the Spec-Bench
 ``question.jsonl`` format consumed by ``evaluation/eval_llama3.py``.
 
-Output schema per line (per
-``.codestable/features/2026-05-24-medqa-vmiss-eval/medqa-vmiss-eval-design.md``
-section 1 D6):
+Output schema per line (see ``.trellis/spec/backend/evaluation-protocols.md``):
 
     {
         "question_id": int,
