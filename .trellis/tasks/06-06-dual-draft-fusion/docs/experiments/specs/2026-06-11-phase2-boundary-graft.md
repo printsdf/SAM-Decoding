@@ -1,10 +1,22 @@
 # Experiment Design: Phase 2 — Predicted-Boundary SAM Grafting
 
 **Date**: 2026-06-11
-**Status**: Design approved
+**Status**: Superseded by `2026-06-11-boundary-predictor-calibration.md`
 **Owner**: Qixuan Fu
 
 ---
+
+## Supersession Note
+
+This design is preserved as historical context, but it is no longer the active
+next experiment. Later review found two load-bearing issues:
+
+- the design predicts a depth, then grafts onto an arbitrary path at that depth;
+- threshold semantics are ambiguous and include values that are invalid for
+  probability-space confidence.
+
+The active next step is the offline boundary-predictor calibration spec:
+`2026-06-11-boundary-predictor-calibration.md`.
 
 ## Goal
 
@@ -232,4 +244,5 @@ If MAT < 7.58 across threshold range [0.5, 3.0], then:
 - [x] Failure modes with next actions
 - [x] 单次 verify 约束满足
 
-**Ready for implementation**: YES
+**Ready for implementation**: NO. Superseded by
+`2026-06-11-boundary-predictor-calibration.md`.
