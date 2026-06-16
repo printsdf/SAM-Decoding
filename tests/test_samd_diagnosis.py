@@ -8,8 +8,8 @@ Modes:
   - both         runs unit then integration (default).
 
 Integration mode requires --model_path + --tree_model_path (a base Llama and
-matching EAGLE3 weights), per .codestable/attention.md the torch /
-transformers / safetensors deps must already be installed.
+matching EAGLE3 weights). Per .trellis/spec/backend/runtime-constraints.md, the
+torch / transformers / safetensors deps must already be installed.
 """
 import argparse
 from typing import Set
@@ -118,6 +118,9 @@ def integration_test(args: argparse.Namespace) -> None:
         n_predicts=15,
         tree_method="eagle3",
         tree_model_path=args.tree_model_path,
+        eagle3_total_token=args.eagle3_total_token,
+        eagle3_depth=args.eagle3_depth,
+        eagle3_top_k=args.eagle3_top_k,
     )
     draft = DraftModel(samd_config, lm=base, dtype=torch.float16, device=args.device)
     stop_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
@@ -188,6 +191,9 @@ def main() -> None:
     parser.add_argument("--model_path", default=None)
     parser.add_argument("--tree_model_path", default=None)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--eagle3_total_token", type=int, default=60)
+    parser.add_argument("--eagle3_depth", type=int, default=7)
+    parser.add_argument("--eagle3_top_k", type=int, default=10)
     args = parser.parse_args()
 
     if args.mode in ("unit", "both"):

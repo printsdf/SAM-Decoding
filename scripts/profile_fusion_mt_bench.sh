@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Profile opt-in fusion overhead on MedQA (80 questions).
-# Usage: bash scripts/profile_fusion_medqa.sh
+# Profile opt-in fusion overhead on MT-Bench (80 questions).
+# Usage: bash scripts/profile_fusion_mt_bench.sh
 
 set -euo pipefail
 
@@ -17,14 +17,14 @@ PYTHON_BIN=${PYTHON_BIN:-python}
 MODEL_PATH=${MODEL_PATH:-/root/aicloud-data/Models/Meta-Llama-3.1-8B-Instruct}
 TREE_MODEL_PATH=${TREE_MODEL_PATH:-/root/aicloud-data/Models/EAGLE3-LLaMA3.1-Instruct-8B}
 SAM_PATH=${SAM_PATH:-}
-BENCH_NAME=medqa
-MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-256}
+BENCH_NAME=mt_bench
+MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-512}
 MAX_CACHE_LEN=${MAX_CACHE_LEN:-4096}
 DTYPE=${DTYPE:-float16}
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 OUTPUT_DIR=${PROFILE_OUTPUT_DIR:-evaluation/data/${BENCH_NAME}/profile_fusion_overhead}
-MODEL_ID=${MODEL_ID:-naive_fusion_medqa_q0_80}
-NOTIFY_TAG=${NOTIFY_TAG:-profile-fusion-medqa}
+MODEL_ID=${MODEL_ID:-naive_fusion_mt_bench_q0_80}
+NOTIFY_TAG=${NOTIFY_TAG:-profile-fusion-mt-bench}
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     if [ "${PYTHON_BIN}" = "python" ] && command -v python3 >/dev/null 2>&1; then
@@ -73,9 +73,9 @@ PROFILE_SUMMARY="${OUTPUT_DIR}/${MODEL_ID}.fusion_profile.txt"
 ORACLE_RESULTS="${OUTPUT_DIR}/${MODEL_ID}.oracle_results.json"
 
 run_start=$(date +%s)
-trap 'rc=$?; notify "ERROR MedQA fusion profiling failed at line ${LINENO} (exit ${rc})"; exit ${rc}' ERR
+trap 'rc=$?; notify "ERROR MT-Bench fusion profiling failed at line ${LINENO} (exit ${rc})"; exit ${rc}' ERR
 
-notify "START MedQA fusion profiling: 80 questions, max_new_tokens=${MAX_NEW_TOKENS}, max_cache_len=${MAX_CACHE_LEN}"
+notify "START MT-Bench fusion profiling: 80 questions, max_new_tokens=${MAX_NEW_TOKENS}, max_cache_len=${MAX_CACHE_LEN}"
 
 cmd=(
     "${PYTHON_BIN}" -m evaluation.inference_samd
@@ -174,7 +174,7 @@ for result in data["results"]:
 PY
 
 elapsed=$(fmt_elapsed $(($(date +%s) - run_start)))
-notify "DONE MedQA fusion profiling in ${elapsed}. Oracle results: ${ORACLE_RESULTS}"
+notify "DONE MT-Bench fusion profiling in ${elapsed}. Oracle results: ${ORACLE_RESULTS}"
 
 echo ""
 echo "All results saved to:"

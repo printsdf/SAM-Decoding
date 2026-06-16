@@ -7,7 +7,6 @@ from ...samd_config import SamdConfig
 from ..tree import TreeModel
 from .eagle3_config import Eagle3Config
 from .eagle3_model import Eagle3Model
-from .tail_sidecar import attach_tail_sidecar
 
 
 class Eagle3(TreeModel):
@@ -45,16 +44,7 @@ class Eagle3(TreeModel):
                     "(base {} vs draft {}); skipping copy, draft may produce "
                     "garbage tokens".format(tuple(base_emb.shape), tuple(draft_emb.shape))
                 )
-        if config.eagle3_tail_path is not None:
-            attach_tail_sidecar(
-                self.model,
-                tail_path=config.eagle3_tail_path,
-                tail_type=config.eagle3_tail_type,
-                dtype=dtype,
-                device=device,
-            )
-        else:
-            self.model.init_tree()
+        self.model.init_tree()
 
         # State machine: cumulative_tokens grows over the whole generation (cleared
         # only by reset); pending_hidden_states is the delta since the last gen_draft

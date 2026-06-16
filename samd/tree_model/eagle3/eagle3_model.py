@@ -124,7 +124,7 @@ class Eagle3Model(nn.Module):
         if self.config.vocab_size == self.config.draft_vocab_size:
             # When draft vocab matches base vocab, official checkpoints drop
             # d2t/t2d (no remapping needed); d2t zeros and t2d all-True preserve
-            # identity reachability for diagnosis and any later sidecar checks.
+            # identity reachability for diagnosis traces.
             allowed_missing.update({"d2t", "t2d"})
         real_missing = [k for k in missing if k not in allowed_missing]
         if real_missing:

@@ -55,14 +55,19 @@ class DraftModel(torch.nn.Module):
         self.reset_fusion_stats()
 
     def reset_fusion_stats(self):
-        mode = self.config.tree_fusion
-        budget = (
-            self.sam_tree_budget.to_dict()
-            if mode == "sam_tree_union_prune"
-            else self.sam_prefix_budget.to_dict()
+        mode = (
+            self.config.fusion_mode
+            if self.config.fusion_mode != "none"
+            else self.config.tree_fusion
         )
+        if mode == "naive" and self.config.fusion_config is not None:
+            budget = self.config.fusion_config.__dict__
+        elif mode == "sam_tree_union_prune":
+            budget = self.sam_tree_budget.to_dict()
+        else:
+            budget = self.sam_prefix_budget.to_dict()
         self.fusion_stats = {
-            "enabled": mode in ("sam_tree_union_prune", "eagle_prefix_sam_expand"),
+            "enabled": mode in ("naive", "sam_tree_union_prune", "eagle_prefix_sam_expand"),
             "mode": mode,
             "budget": budget,
             "steps": 0,
@@ -76,8 +81,120 @@ class DraftModel(torch.nn.Module):
             "added_nodes_sum": 0,
             "retained_leaf_count_sum": 0,
             "missing_leaf_count_sum": 0,
+            "eagle_nodes_sum": 0,
+            "sam_nodes_sum": 0,
+            "final_nodes_sum": 0,
+            "merged_nodes_before_truncation_sum": 0,
+            "eagle_score_sum": 0.0,
+            "sam_score_sum": 0.0,
+            "eagle_depth_sum": 0.0,
+            "sam_depth_sum": 0.0,
+            "sam_match_length_sum": 0.0,
+            "sam_match_length_max": 0,
+            "both_proposed_sum": 0,
+            "truncated_count_sum": 0,
+            "selected_eagle_sum": 0,
+            "selected_sam_sum": 0,
+            "selected_both_sum": 0,
+            "sam_skipped_count": 0,
+            "accept_rates": [],
+            "last_step": None,
             "last": None,
         }
+
+    def record_naive_fusion(self, metadata: Dict) -> None:
+        if not self.fusion_stats.get("enabled"):
+            return
+        self.fusion_stats["steps"] += 1
+        self.fusion_stats["matched_steps"] += 1
+        self.fusion_stats["node_count_sum"] += int(metadata.get("final_nodes", 0)) + 1
+        self.fusion_stats["sam_added_nodes_sum"] += int(metadata.get("sam_contribution", 0))
+        self.fusion_stats["merged_nodes_sum"] += int(metadata.get("dedup_count", 0))
+        self.fusion_stats["eagle_nodes_sum"] += int(metadata.get("eagle_nodes", 0))
+        self.fusion_stats["sam_nodes_sum"] += int(metadata.get("sam_nodes", 0))
+        self.fusion_stats["final_nodes_sum"] += int(metadata.get("final_nodes", 0))
+        self.fusion_stats["merged_nodes_before_truncation_sum"] += int(metadata.get("merged_nodes", 0))
+        self.fusion_stats["eagle_score_sum"] += float(metadata.get("eagle_avg_score", 0.0))
+        self.fusion_stats["sam_score_sum"] += float(metadata.get("sam_avg_score", 0.0))
+        self.fusion_stats["eagle_depth_sum"] += float(metadata.get("eagle_avg_depth", 0.0))
+        self.fusion_stats["sam_depth_sum"] += float(metadata.get("sam_avg_depth", 0.0))
+        self.fusion_stats["sam_match_length_sum"] += float(metadata.get("sam_avg_match_length", 0.0))
+        self.fusion_stats["sam_match_length_max"] = max(
+            int(self.fusion_stats["sam_match_length_max"]),
+            int(metadata.get("sam_max_match_length", 0)),
+        )
+        self.fusion_stats["both_proposed_sum"] += int(metadata.get("both_proposed_count", 0))
+        self.fusion_stats["truncated_count_sum"] += int(metadata.get("truncated_count", 0))
+        self.fusion_stats["selected_eagle_sum"] += int(metadata.get("selected_eagle", 0))
+        self.fusion_stats["selected_sam_sum"] += int(metadata.get("selected_sam", 0))
+        self.fusion_stats["selected_both_sum"] += int(metadata.get("selected_both", 0))
+        if metadata.get("sam_skipped"):
+            self.fusion_stats["sam_skipped_count"] += 1
+        self.fusion_stats["last_step"] = dict(metadata)
+        self.fusion_stats["last"] = dict(metadata)
+
+    def record_naive_acceptance(
+        self,
+        accepted_tokens: int,
+        fusion_meta: Optional[Dict] = None,
+        accepted_indices: Optional[torch.Tensor] = None,
+    ) -> None:
+        if not self.fusion_stats.get("enabled") or self.fusion_stats.get("mode") != "naive":
+            return
+        meta = fusion_meta or self.fusion_stats.get("last_step")
+        if not meta:
+            return
+
+        accepted_tokens = max(int(accepted_tokens), 0)
+        selected_eagle = int(meta.get("selected_eagle", 0))
+        selected_sam = int(meta.get("selected_sam", 0))
+        selected_both = int(meta.get("selected_both", 0))
+        selected_total = selected_eagle + selected_sam + selected_both
+        if selected_total <= 0:
+            return
+
+        counts = {"root": 0, "eagle": 0, "sam": 0, "both": 0, "unknown": 0}
+        node_sources = meta.get("node_sources") or []
+        if accepted_indices is not None and node_sources:
+            index_values = accepted_indices.detach().cpu().tolist()
+            if not isinstance(index_values, list):
+                index_values = [index_values]
+            for index_value in index_values:
+                index = int(index_value)
+                if index < 0:
+                    continue
+                source = node_sources[index] if index < len(node_sources) else "unknown"
+                if source not in counts:
+                    source = "unknown"
+                counts[source] += 1
+        else:
+            remaining = max(accepted_tokens - 1, 0)
+            counts["both"] = min(selected_both, remaining)
+            remaining -= counts["both"]
+            counts["eagle"] = min(selected_eagle, remaining)
+            remaining -= counts["eagle"]
+            counts["sam"] = min(selected_sam, remaining)
+            counts["root"] = 1 if accepted_tokens > 0 else 0
+
+        eagle_total = selected_eagle + selected_both
+        sam_total = selected_sam + selected_both
+        eagle_accepted = counts["eagle"] + counts["both"]
+        sam_accepted = counts["sam"] + counts["both"]
+        accepted_nonroot = counts["eagle"] + counts["sam"] + counts["both"] + counts["unknown"]
+
+        self.fusion_stats["accept_rates"].append({
+            "accepted_tokens": accepted_tokens,
+            "accepted_nonroot": accepted_nonroot,
+            "eagle_rate": eagle_accepted / eagle_total if eagle_total > 0 else 0.0,
+            "sam_rate": sam_accepted / sam_total if sam_total > 0 else 0.0,
+            "eagle_accepted": eagle_accepted,
+            "sam_accepted": sam_accepted,
+            "both_accepted": counts["both"],
+            "root_accepted": counts["root"],
+            "unknown_accepted": counts["unknown"],
+            "eagle_total": eagle_total,
+            "sam_total": sam_total,
+        })
 
     def fusion_summary(self):
         if not self.fusion_stats.get("enabled"):
@@ -97,6 +214,30 @@ class DraftModel(torch.nn.Module):
                 "budget_hit_steps": self.fusion_stats["budget_hit_steps"],
                 "avg_sam_added_nodes": self.fusion_stats["sam_added_nodes_sum"] / steps,
                 "avg_merged_nodes": self.fusion_stats["merged_nodes_sum"] / steps,
+            })
+        if self.fusion_stats["mode"] == "naive":
+            summary.update({
+                "avg_sam_contribution": self.fusion_stats["sam_added_nodes_sum"] / steps,
+                "avg_dedup_count": self.fusion_stats["merged_nodes_sum"] / steps,
+                "avg_eagle_nodes": self.fusion_stats["eagle_nodes_sum"] / steps,
+                "avg_sam_nodes": self.fusion_stats["sam_nodes_sum"] / steps,
+                "avg_final_nodes": self.fusion_stats["final_nodes_sum"] / steps,
+                "avg_merged_nodes": self.fusion_stats["merged_nodes_before_truncation_sum"] / steps,
+                "avg_eagle_score": self.fusion_stats["eagle_score_sum"] / steps,
+                "avg_sam_score": self.fusion_stats["sam_score_sum"] / steps,
+                "avg_eagle_depth": self.fusion_stats["eagle_depth_sum"] / steps,
+                "avg_sam_depth": self.fusion_stats["sam_depth_sum"] / steps,
+                "avg_sam_match_length": self.fusion_stats["sam_match_length_sum"] / steps,
+                "sam_max_match_length": self.fusion_stats["sam_match_length_max"],
+                "avg_both_proposed_count": self.fusion_stats["both_proposed_sum"] / steps,
+                "avg_truncated_count": self.fusion_stats["truncated_count_sum"] / steps,
+                "avg_selected_eagle": self.fusion_stats["selected_eagle_sum"] / steps,
+                "avg_selected_sam": self.fusion_stats["selected_sam_sum"] / steps,
+                "avg_selected_both": self.fusion_stats["selected_both_sum"] / steps,
+                "sam_skipped_count": self.fusion_stats["sam_skipped_count"],
+                "sam_skipped_rate": self.fusion_stats["sam_skipped_count"] / steps,
+                "accept_rates": list(self.fusion_stats["accept_rates"]),
+                "last_step": self.fusion_stats["last_step"],
             })
         if self.fusion_stats["mode"] == "eagle_prefix_sam_expand":
             summary.update({
@@ -309,6 +450,8 @@ class DraftModel(torch.nn.Module):
         last_hidden_states: Optional[torch.Tensor] = None,
         tree_tokens: Optional[torch.Tensor] = None,
         tree_logits: Optional[torch.Tensor] = None,
+        fusion_meta: Optional[Dict] = None,
+        accepted_indices: Optional[torch.Tensor] = None,
     ):
         tokens_list = tokens.tolist()
         self.sam_dyn.add_tokens(tokens_list)
@@ -319,3 +462,9 @@ class DraftModel(torch.nn.Module):
             tree_tokens=tree_tokens, 
             tree_logits=tree_logits,
         )
+        if fusion_meta is not None and self.config.fusion_mode == "naive":
+            self.record_naive_acceptance(
+                len(tokens_list),
+                fusion_meta,
+                accepted_indices=accepted_indices,
+            )

@@ -49,6 +49,9 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda",
                         choices=["cuda", "cpu"])
     parser.add_argument("--samd_n_predicts", type=int, default=15)
+    parser.add_argument("--eagle3_total_token", type=int, default=60)
+    parser.add_argument("--eagle3_depth", type=int, default=7)
+    parser.add_argument("--eagle3_top_k", type=int, default=10)
     args = parser.parse_args()
     args.dtype = {"float16": torch.float16, "float32": torch.float32}[args.dtype]
     return args
@@ -77,6 +80,9 @@ def run_samd(args, model, tokenizer, inputs):
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
         tree_model_path=args.tree_model_path,
+        eagle3_total_token=args.eagle3_total_token,
+        eagle3_depth=args.eagle3_depth,
+        eagle3_top_k=args.eagle3_top_k,
     )
     draft = DraftModel(
         samd_config,

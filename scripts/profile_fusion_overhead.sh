@@ -122,12 +122,6 @@ cmd=(
 if [ -n "${SAM_PATH}" ]; then
     cmd+=(--sam_path "${SAM_PATH}")
 fi
-if [ -n "${EAGLE3_TAIL_PATH:-}" ]; then
-    cmd+=(--eagle3_tail_path "${EAGLE3_TAIL_PATH}")
-fi
-if [ -n "${EAGLE3_TAIL_TYPE:-}" ]; then
-    cmd+=(--eagle3_tail_type "${EAGLE3_TAIL_TYPE}")
-fi
 
 "${cmd[@]}" "$@"
 

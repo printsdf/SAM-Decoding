@@ -26,6 +26,26 @@ CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 PROFILE_OUTPUT_DIR=${PROFILE_OUTPUT_DIR:-evaluation/data/${BENCH_NAME}/profile_naive_fusion}
 NOTIFY_TAG=${NOTIFY_TAG:-profile-naive-fusion}
 
+if [ "$#" -ge 2 ] && [[ "$1" =~ ^[0-9]+$ ]] && [[ "$2" =~ ^[0-9]+$ ]]; then
+    PROFILE_QUESTION_BEGIN=$1
+    profile_question_end=$2
+    if [ "${profile_question_end}" -le "${PROFILE_QUESTION_BEGIN}" ]; then
+        echo "ERROR: question_end must be greater than question_begin" >&2
+        exit 2
+    fi
+    PROFILE_NUM_QUESTIONS=$((profile_question_end - PROFILE_QUESTION_BEGIN))
+    shift 2
+fi
+
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+    if [ "${PYTHON_BIN}" = "python" ] && command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN=python3
+    else
+        echo "ERROR: python executable not found: ${PYTHON_BIN}" >&2
+        exit 127
+    fi
+fi
+
 export CUDA_VISIBLE_DEVICES
 export PYTHONPATH="$(pwd)${PYTHONPATH:+:${PYTHONPATH}}"
 
@@ -77,14 +97,6 @@ cmd=(
 
 if [ -n "${SAM_PATH}" ]; then
     cmd+=(--sam-path "${SAM_PATH}")
-fi
-
-if [ -n "${EAGLE3_TAIL_PATH:-}" ]; then
-    cmd+=(--eagle3-tail-path "${EAGLE3_TAIL_PATH}")
-fi
-
-if [ -n "${EAGLE3_TAIL_TYPE:-}" ]; then
-    cmd+=(--eagle3-tail-type "${EAGLE3_TAIL_TYPE}")
 fi
 
 "${cmd[@]}" "$@"

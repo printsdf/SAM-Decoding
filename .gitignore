@@ -9,3 +9,4 @@ misc
 evaluation/model/pia
 .env
 .worktrees/
+.ace-tool/

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Profile opt-in fusion overhead on MedQA (80 questions).
-# Usage: bash scripts/profile_fusion_medqa.sh
+# Profile opt-in fusion overhead on HumanEval (164 questions).
+# Usage: bash scripts/profile_fusion_humaneval.sh
 
 set -euo pipefail
 
@@ -17,14 +17,14 @@ PYTHON_BIN=${PYTHON_BIN:-python}
 MODEL_PATH=${MODEL_PATH:-/root/aicloud-data/Models/Meta-Llama-3.1-8B-Instruct}
 TREE_MODEL_PATH=${TREE_MODEL_PATH:-/root/aicloud-data/Models/EAGLE3-LLaMA3.1-Instruct-8B}
 SAM_PATH=${SAM_PATH:-}
-BENCH_NAME=medqa
-MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-256}
+BENCH_NAME=humaneval
+MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-512}
 MAX_CACHE_LEN=${MAX_CACHE_LEN:-4096}
 DTYPE=${DTYPE:-float16}
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 OUTPUT_DIR=${PROFILE_OUTPUT_DIR:-evaluation/data/${BENCH_NAME}/profile_fusion_overhead}
-MODEL_ID=${MODEL_ID:-naive_fusion_medqa_q0_80}
-NOTIFY_TAG=${NOTIFY_TAG:-profile-fusion-medqa}
+MODEL_ID=${MODEL_ID:-naive_fusion_humaneval_q0_164}
+NOTIFY_TAG=${NOTIFY_TAG:-profile-fusion-humaneval}
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     if [ "${PYTHON_BIN}" = "python" ] && command -v python3 >/dev/null 2>&1; then
@@ -71,11 +71,13 @@ ANSWER_FILE="${OUTPUT_DIR}/${MODEL_ID}.jsonl"
 PROFILE_JSON="${OUTPUT_DIR}/${MODEL_ID}.fusion_profile.json"
 PROFILE_SUMMARY="${OUTPUT_DIR}/${MODEL_ID}.fusion_profile.txt"
 ORACLE_RESULTS="${OUTPUT_DIR}/${MODEL_ID}.oracle_results.json"
+REJECTION_BOUNDARY_RESULTS="${OUTPUT_DIR}/${MODEL_ID}.oracle_rejection_boundary.json"
+HIGH_PRECISION_SAM_RESULTS="${OUTPUT_DIR}/${MODEL_ID}.oracle_high_precision_sam.json"
 
 run_start=$(date +%s)
-trap 'rc=$?; notify "ERROR MedQA fusion profiling failed at line ${LINENO} (exit ${rc})"; exit ${rc}' ERR
+trap 'rc=$?; notify "ERROR HumanEval fusion profiling failed at line ${LINENO} (exit ${rc})"; exit ${rc}' ERR
 
-notify "START MedQA fusion profiling: 80 questions, max_new_tokens=${MAX_NEW_TOKENS}, max_cache_len=${MAX_CACHE_LEN}"
+notify "START HumanEval fusion profiling: 164 questions, max_new_tokens=${MAX_NEW_TOKENS}, max_cache_len=${MAX_CACHE_LEN}"
 
 cmd=(
     "${PYTHON_BIN}" -m evaluation.inference_samd
@@ -85,7 +87,7 @@ cmd=(
     --model-id "${MODEL_ID}"
     --bench-name "${BENCH_NAME}"
     --question-begin 0
-    --question-end 80
+    --question-end 164
     --answer-file "${ANSWER_FILE}"
     --max-new-tokens "${MAX_NEW_TOKENS}"
     --dtype "${DTYPE}"
@@ -142,12 +144,24 @@ for phase in ("draft_eagle", "draft_sam", "fusion_logic", "verify", "total"):
     ))
 PY
 
-# Run oracle analysis
+# Run oracle analyses
 echo ""
 echo "Running oracle analysis..."
 "${PYTHON_BIN}" evaluation/oracle_fusion_analysis.py \
     --trace-file "${PROFILE_JSON}" \
     --output-json "${ORACLE_RESULTS}"
+
+echo ""
+echo "Running rejection-boundary oracle analysis..."
+"${PYTHON_BIN}" evaluation/oracle_rejection_boundary.py \
+    --trace-file "${PROFILE_JSON}" \
+    --output "${REJECTION_BOUNDARY_RESULTS}"
+
+echo ""
+echo "Running high-precision SAM oracle analysis..."
+"${PYTHON_BIN}" evaluation/oracle_high_precision_sam.py \
+    --trace-file "${PROFILE_JSON}" \
+    --output "${HIGH_PRECISION_SAM_RESULTS}"
 
 # Print oracle results
 "${PYTHON_BIN}" - "${ORACLE_RESULTS}" <<'PY'
@@ -174,11 +188,13 @@ for result in data["results"]:
 PY
 
 elapsed=$(fmt_elapsed $(($(date +%s) - run_start)))
-notify "DONE MedQA fusion profiling in ${elapsed}. Oracle results: ${ORACLE_RESULTS}"
+notify "DONE HumanEval fusion profiling in ${elapsed}. Oracle results: ${ORACLE_RESULTS}. Rejection boundary: ${REJECTION_BOUNDARY_RESULTS}. High precision SAM: ${HIGH_PRECISION_SAM_RESULTS}"
 
 echo ""
 echo "All results saved to:"
-echo "  Answer file:     ${ANSWER_FILE}"
-echo "  Profile JSON:    ${PROFILE_JSON}"
-echo "  Profile summary: ${PROFILE_SUMMARY}"
-echo "  Oracle results:  ${ORACLE_RESULTS}"
+echo "  Answer file:             ${ANSWER_FILE}"
+echo "  Profile JSON:            ${PROFILE_JSON}"
+echo "  Profile summary:         ${PROFILE_SUMMARY}"
+echo "  Oracle results:          ${ORACLE_RESULTS}"
+echo "  Rejection boundary:      ${REJECTION_BOUNDARY_RESULTS}"
+echo "  High precision SAM:      ${HIGH_PRECISION_SAM_RESULTS}"

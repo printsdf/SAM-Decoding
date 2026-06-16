@@ -10,6 +10,7 @@ from fastchat.utils import str_to_torch_dtype
 from evaluation.eval import run_evals, reorg_answer_files
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from samd import SamdConfig, SamdModel, SamdGenerationConfig, DraftModel, load_sam
+from samd.profiling import FusionProfiler
 
 def samd_forward(
     inputs,
@@ -20,6 +21,7 @@ def samd_forward(
     do_sample: bool = False,
     diagnosis_trace_out: Optional[list] = None,
     max_cache_len: Optional[int] = None,
+    fusion_profiler: Optional[FusionProfiler] = None,
 ):
     if max_cache_len is None:
         max_cache_len = model.lm.config.max_position_embeddings
@@ -32,6 +34,7 @@ def samd_forward(
             greedy=not do_sample,
             temperature=temperature,
             collect_diagnosis_trace=(diagnosis_trace_out is not None),
+            fusion_profiler=fusion_profiler,
         ),
     )
     if diagnosis_trace_out is not None and outputs.diagnosis_trace is not None:
@@ -151,6 +154,30 @@ if __name__ == "__main__":
             "eagle_prefix_sam_expand",
         ],
     )
+    parser.add_argument(
+        "--fusion_mode",
+        type=str,
+        default="none",
+        choices=["none", "naive", "rejection_boundary"],
+    )
+    parser.add_argument("--fusion_max_draft_tokens", type=int, default=60)
+    parser.add_argument(
+        "--fusion_dedup_strategy",
+        type=str,
+        default="max_score",
+        choices=["max_score", "sum_score", "keep_both"],
+    )
+    parser.add_argument(
+        "--fusion_truncate_strategy",
+        type=str,
+        default="score",
+        choices=["score", "depth_first"],
+    )
+    parser.add_argument("--rejection_conf_threshold", type=float, default=0.5)
+    parser.add_argument("--boundary_graft_threshold", type=float, default=1.5)
+    parser.add_argument("--boundary_graft_max_sam_nodes", type=int, default=8)
+    parser.add_argument("--boundary_graft_min_depth", type=int, default=3)
+    parser.add_argument("--boundary_graft_max_depth", type=int, default=8)
     parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
     parser.add_argument("--sam_tree_top_k", type=int, default=4)
     parser.add_argument("--sam_tree_alpha", type=float, default=4.0)
@@ -160,11 +187,31 @@ if __name__ == "__main__":
     parser.add_argument("--sam_prefix_min_depth", type=int, default=1)
     parser.add_argument("--sam_prefix_max_depth", type=int, default=4)
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
+    parser.add_argument("--eagle3_total_token", type=int, default=60)
+    parser.add_argument("--eagle3_depth", type=int, default=7)
+    parser.add_argument("--eagle3_top_k", type=int, default=10)
     parser.add_argument("--attn_implementation", type=str, default="sdpa")
     parser.add_argument(
         "--collect_diagnosis_trace",
         action="store_true",
         help="Collect per-step diagnosis trace (V_miss / verifier_target) into answer file. Off by default.",
+    )
+    parser.add_argument(
+        "--profile-fusion",
+        action="store_true",
+        help="Collect opt-in per-step fusion timing and memory diagnostics. Off by default.",
+    )
+    parser.add_argument(
+        "--fusion-profile-file",
+        type=str,
+        default=None,
+        help="JSON trace path for --profile-fusion. Defaults to <answer-file>.fusion_profile.json.",
+    )
+    parser.add_argument(
+        "--fusion-profile-summary-file",
+        type=str,
+        default=None,
+        help="Human-readable summary path for --profile-fusion. Defaults to <answer-file>.fusion_profile.txt.",
     )
     parser.add_argument(
         "--max_cache_len",
@@ -181,11 +228,18 @@ if __name__ == "__main__":
     else:
         answer_file = f"evaluation/data/{args.bench_name}/model_answer/{args.model_id}.jsonl"
 
+    if args.profile_fusion and args.num_gpus_total // args.num_gpus_per_model > 1:
+        raise SystemExit("--profile-fusion currently supports single-process evaluation only")
+
     print(f"Output to {answer_file}")
     
     print("len_bias:", args.samd_len_bias)
     print("len_threshold:", args.samd_len_threshold)
     print("tree_fusion:", args.tree_fusion)
+    print("fusion_mode:", args.fusion_mode)
+    print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
+    print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
+    print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
     print("sam_tree_max_nodes:", args.sam_tree_max_nodes)
     print("sam_tree_top_k:", args.sam_tree_top_k)
     print("sam_tree_alpha:", args.sam_tree_alpha)
@@ -194,6 +248,33 @@ if __name__ == "__main__":
     print("sam_prefix_top_k:", args.sam_prefix_top_k)
     print("sam_prefix_min_depth:", args.sam_prefix_min_depth)
     print("sam_prefix_max_depth:", args.sam_prefix_max_depth)
+    print("eagle3_total_token:", args.eagle3_total_token)
+    print("eagle3_depth:", args.eagle3_depth)
+    print("eagle3_top_k:", args.eagle3_top_k)
+
+    fusion_profiler = None
+    if args.profile_fusion:
+        fusion_profile_file = args.fusion_profile_file or "{}.fusion_profile.json".format(answer_file)
+        fusion_profile_summary_file = (
+            args.fusion_profile_summary_file
+            or "{}.fusion_profile.txt".format(answer_file)
+        )
+        fusion_profiler = FusionProfiler(
+            enabled=True,
+            trace_path=fusion_profile_file,
+            summary_path=fusion_profile_summary_file,
+            metadata={
+                "bench_name": args.bench_name,
+                "model_id": args.model_id,
+                "fusion_mode": args.fusion_mode,
+                "tree_fusion": args.tree_fusion,
+                "samd_len_threshold": args.samd_len_threshold,
+                "max_cache_len": args.max_cache_len,
+            },
+        )
+        print("profile_fusion:", True)
+        print("fusion_profile_file:", fusion_profile_file)
+        print("fusion_profile_summary_file:", fusion_profile_summary_file)
     
     if args.num_gpus_total == 1:
         device_map = "cuda"
@@ -222,7 +303,19 @@ if __name__ == "__main__":
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
         tree_fusion=args.tree_fusion,
+        fusion_mode=args.fusion_mode,
+        fusion_max_draft_tokens=args.fusion_max_draft_tokens,
+        fusion_dedup_strategy=args.fusion_dedup_strategy,
+        fusion_truncate_strategy=args.fusion_truncate_strategy,
+        rejection_conf_threshold=args.rejection_conf_threshold,
+        boundary_graft_threshold=args.boundary_graft_threshold,
+        boundary_graft_max_sam_nodes=args.boundary_graft_max_sam_nodes,
+        boundary_graft_min_depth=args.boundary_graft_min_depth,
+        boundary_graft_max_depth=args.boundary_graft_max_depth,
         tree_model_path=args.tree_model_path,
+        eagle3_total_token=args.eagle3_total_token,
+        eagle3_depth=args.eagle3_depth,
+        eagle3_top_k=args.eagle3_top_k,
         len_threshold=args.samd_len_threshold,
         len_bias=args.samd_len_bias,
         tree_path=args.samd_tree_path,
@@ -274,6 +367,12 @@ if __name__ == "__main__":
         do_sample=do_sample,
         collect_diagnosis_trace=args.collect_diagnosis_trace,
         max_cache_len=args.max_cache_len,
+        fusion_profiler=fusion_profiler,
     )
 
     reorg_answer_files[args.template](answer_file)
+    if fusion_profiler is not None:
+        fusion_profiler.finish_run()
+        fusion_profiler.write_json()
+        fusion_profiler.write_summary()
+        print(fusion_profiler.render_summary())

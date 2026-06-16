@@ -6,10 +6,9 @@ the SamdModel main path at run time. Decoupled from concrete tree_method via
 the optional ``t2d_buffer`` parameter so non-eagle3 callers degrade cleanly
 to reachable=None.
 
-The trace dict shape is the 7-key schema described in
-``.codestable/features/2026-05-24-medqa-vmiss-eval/medqa-vmiss-eval-design.md``
-sections 0 and 2.1, kept stable so ``evaluation/analyze_vmiss.py`` can rely on
-it.
+The trace dict shape is the 7-key schema documented in
+``.trellis/spec/backend/evaluation-protocols.md``, kept stable so
+``evaluation/analyze_vmiss.py`` can rely on it.
 """
 from typing import Any, Dict, Optional
 

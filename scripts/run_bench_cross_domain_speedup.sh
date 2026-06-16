@@ -8,7 +8,7 @@
 #   baseline, pure_eagle3_p1, samd_eagle3_p1, sam_only_p1,
 #   pure_eagle3_p2, samd_eagle3_p2 }.jsonl
 #
-# See .codestable/features/2026-05-25-bench-cross-domain-speedup/bench-cross-domain-speedup-design.md
+# See .trellis/spec/backend/evaluation-protocols.md
 # Configuration: copy .env.example to .env and edit paths / FEISHU_WEBHOOK_URL.
 
 set -e

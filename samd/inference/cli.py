@@ -51,7 +51,14 @@ def main(args):
         samd_config = SamdConfig(
             tree_method=args.tree_method,
             tree_fusion=args.tree_fusion,
+            fusion_mode=args.fusion_mode,
+            fusion_max_draft_tokens=args.fusion_max_draft_tokens,
+            fusion_dedup_strategy=args.fusion_dedup_strategy,
+            fusion_truncate_strategy=args.fusion_truncate_strategy,
             tree_model_path=args.tree_model_path,
+            eagle3_total_token=args.eagle3_total_token,
+            eagle3_depth=args.eagle3_depth,
+            eagle3_top_k=args.eagle3_top_k,
             sam_tree_max_nodes=args.sam_tree_max_nodes,
             sam_tree_top_k=args.sam_tree_top_k,
             sam_tree_alpha=args.sam_tree_alpha,
@@ -270,6 +277,25 @@ if __name__ == "__main__":
             "eagle_prefix_sam_expand",
         ],
     )
+    parser.add_argument(
+        "--fusion_mode",
+        type=str,
+        default="none",
+        choices=["none", "naive"],
+    )
+    parser.add_argument("--fusion_max_draft_tokens", type=int, default=60)
+    parser.add_argument(
+        "--fusion_dedup_strategy",
+        type=str,
+        default="max_score",
+        choices=["max_score", "sum_score", "keep_both"],
+    )
+    parser.add_argument(
+        "--fusion_truncate_strategy",
+        type=str,
+        default="score",
+        choices=["score", "depth_first"],
+    )
     parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
     parser.add_argument("--sam_tree_top_k", type=int, default=4)
     parser.add_argument("--sam_tree_alpha", type=float, default=4.0)
@@ -279,5 +305,8 @@ if __name__ == "__main__":
     parser.add_argument("--sam_prefix_min_depth", type=int, default=1)
     parser.add_argument("--sam_prefix_max_depth", type=int, default=4)
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
+    parser.add_argument("--eagle3_total_token", type=int, default=60)
+    parser.add_argument("--eagle3_depth", type=int, default=7)
+    parser.add_argument("--eagle3_top_k", type=int, default=10)
     args = parser.parse_args()
     main(args)

@@ -28,6 +28,19 @@ class SamdConfig:
         "sam_tree_union_prune",
         "eagle_prefix_sam_expand",
     ] = field(default="none")
+    fusion_mode: Literal[
+        "none", "naive", "payoff_aware", "tree_aware", "rejection_boundary", "boundary_graft"
+    ] = field(default="none")
+    fusion_max_draft_tokens: int = field(default=60)
+    fusion_dedup_strategy: Literal["max_score", "sum_score", "keep_both"] = field(
+        default="max_score"
+    )
+    fusion_truncate_strategy: Literal["score", "depth_first"] = field(default="score")
+    rejection_conf_threshold: float = field(default=2.0)  # Phase 1: high margin = confidently wrong
+    boundary_graft_threshold: float = field(default=1.5)  # Phase 2: low margin = uncertain, trigger SAM
+    boundary_graft_max_sam_nodes: int = field(default=8)  # Max SAM nodes to graft
+    boundary_graft_min_depth: int = field(default=3)  # Min depth for prediction
+    boundary_graft_max_depth: int = field(default=8)  # Max depth for prediction
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -37,6 +50,9 @@ class SamdConfig:
     sam_prefix_min_depth: int = field(default=1)
     sam_prefix_max_depth: Optional[int] = field(default=4)
     tree_model_path: Optional[str] = field(default=None)
+    eagle3_total_token: int = field(default=60)
+    eagle3_depth: int = field(default=7)
+    eagle3_top_k: int = field(default=10)
     tree_path: Optional[str] = field(default=None)
     tree: Optional[List[List[int]]] = field(default=None)
     tree_config: Optional[Dict[str, Any]] = field(default=None)
@@ -57,6 +73,42 @@ class SamdConfig:
             raise ValueError(
                 'tree_fusion="{}" only supports tree_method="eagle3"'.format(self.tree_fusion)
             )
+        if self.fusion_mode not in ("none", "naive", "rejection_boundary", "boundary_graft"):
+            raise ValueError("unsupported fusion_mode: {}".format(self.fusion_mode))
+        if self.fusion_mode != "none" and self.tree_method != "eagle3":
+            raise ValueError(
+                'fusion_mode="{}" only supports tree_method="eagle3"'.format(self.fusion_mode)
+            )
+        if self.fusion_mode != "none" and self.tree_fusion != "none":
+            raise ValueError("fusion_mode and tree_fusion cannot both be enabled")
+        if not isinstance(self.fusion_max_draft_tokens, int) or isinstance(
+            self.fusion_max_draft_tokens, bool
+        ):
+            raise ValueError("fusion_max_draft_tokens must be a positive integer")
+        if self.fusion_max_draft_tokens <= 0:
+            raise ValueError("fusion_max_draft_tokens must be a positive integer")
+        if self.fusion_dedup_strategy not in ("max_score", "sum_score", "keep_both"):
+            raise ValueError(
+                "unsupported fusion_dedup_strategy: {}".format(self.fusion_dedup_strategy)
+            )
+        if self.fusion_truncate_strategy not in ("score", "depth_first"):
+            raise ValueError(
+                "unsupported fusion_truncate_strategy: {}".format(
+                    self.fusion_truncate_strategy
+                )
+            )
+        if not isinstance(self.eagle3_total_token, int) or isinstance(self.eagle3_total_token, bool):
+            raise ValueError("eagle3_total_token must be a positive integer")
+        if self.eagle3_total_token <= 0:
+            raise ValueError("eagle3_total_token must be a positive integer")
+        if not isinstance(self.eagle3_depth, int) or isinstance(self.eagle3_depth, bool):
+            raise ValueError("eagle3_depth must be a positive integer")
+        if self.eagle3_depth <= 0:
+            raise ValueError("eagle3_depth must be a positive integer")
+        if not isinstance(self.eagle3_top_k, int) or isinstance(self.eagle3_top_k, bool):
+            raise ValueError("eagle3_top_k must be a positive integer")
+        if self.eagle3_top_k <= 0:
+            raise ValueError("eagle3_top_k must be a positive integer")
         if not isinstance(self.sam_tree_max_nodes, int) or isinstance(self.sam_tree_max_nodes, bool):
             raise ValueError("sam_tree_max_nodes must be a positive integer")
         if self.sam_tree_max_nodes <= 0:
@@ -111,6 +163,23 @@ class SamdConfig:
                 self.use_last_hidden_states = True
             else:
                 raise ValueError
+
+    @property
+    def fusion_config(self) -> Optional[Any]:
+        if self.fusion_mode == "none":
+            return None
+        from .fusion.types import FusionConfig
+
+        return FusionConfig(
+            mode=(
+                "naive"
+                if self.fusion_mode == "rejection_boundary"
+                else self.fusion_mode
+            ),
+            max_draft_tokens=self.fusion_max_draft_tokens,
+            dedup_strategy=self.fusion_dedup_strategy,
+            truncate_strategy=self.fusion_truncate_strategy,
+        )
 
 
 class ForwardType(str, Enum):

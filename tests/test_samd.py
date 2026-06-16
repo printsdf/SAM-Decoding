@@ -26,12 +26,16 @@ def parse_args():
     parser.add_argument('--max_cache_len', type=int, default=2048)
     parser.add_argument("--tree_method", type=str, default="token_recycle")
     parser.add_argument("--tree_model_path", type=str, default="/data/models/EAGLE-Vicuna-7B-v1.3")
-    parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
+    parser.add_argument("--eagle3_total_token", type=int, default=60)
+    parser.add_argument("--eagle3_depth", type=int, default=7)
+    parser.add_argument("--eagle3_top_k", type=int, default=10)
+    parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32', 'bfloat16'])
     parser.add_argument('--device', type=str, default="cuda", choices=['cuda', 'cpu'])
     args = parser.parse_args()
     args.dtype = {
         'float16': torch.float16,
         'float32': torch.float32,
+        'bfloat16': torch.bfloat16,
     }[args.dtype]
     return args
 
@@ -61,6 +65,9 @@ def samd_generate(args, inputs, model, tokenizer):
         n_predicts=args.samd_n_predicts,
         tree_method=args.tree_method,
         tree_model_path=args.tree_model_path,
+        eagle3_total_token=args.eagle3_total_token,
+        eagle3_depth=args.eagle3_depth,
+        eagle3_top_k=args.eagle3_top_k,
     )
     draft = DraftModel(
         samd_config, 

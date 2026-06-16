@@ -276,10 +276,6 @@ def build_command(args: argparse.Namespace, stats_file: Path, answer_file: Path)
         command.extend(["--sam_path", args.sam_path])
     if args.samd_tree_path:
         command.extend(["--samd_tree_path", args.samd_tree_path])
-    if args.eagle3_tail_path:
-        command.extend(["--eagle3_tail_path", args.eagle3_tail_path])
-    if args.eagle3_tail_type:
-        command.extend(["--eagle3_tail_type", args.eagle3_tail_type])
     return command
 
 
@@ -530,19 +526,6 @@ def parse_args() -> argparse.Namespace:
         "--samd_tree_path",
         dest="samd_tree_path",
         default=os.environ.get("SAMD_TREE_PATH") or None,
-    )
-    parser.add_argument(
-        "--eagle3-tail-path",
-        "--eagle3_tail_path",
-        dest="eagle3_tail_path",
-        default=os.environ.get("EAGLE3_TAIL_PATH") or None,
-    )
-    parser.add_argument(
-        "--eagle3-tail-type",
-        "--eagle3_tail_type",
-        dest="eagle3_tail_type",
-        default=os.environ.get("EAGLE3_TAIL_TYPE", "auto"),
-        choices=["auto", "plain", "tucker"],
     )
     parser.add_argument("--template", default=os.environ.get("TEMPLATE", "llama3"), choices=["vicuna", "llama3"])
     parser.add_argument(

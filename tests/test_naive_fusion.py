@@ -347,6 +347,58 @@ def test_record_naive_acceptance_uses_accepted_tree_indices():
     assert rate["sam_rate"] == 1.0
 
 
+def test_record_naive_fusion_updates_stats_on_real_draft_class():
+    draft = type("DummyDraft", (), {})()
+    draft.fusion_stats = {
+        "enabled": True,
+        "mode": "naive",
+        "steps": 0,
+        "matched_steps": 0,
+        "node_count_sum": 0,
+        "sam_added_nodes_sum": 0,
+        "merged_nodes_sum": 0,
+        "eagle_nodes_sum": 0,
+        "sam_nodes_sum": 0,
+        "final_nodes_sum": 0,
+        "merged_nodes_before_truncation_sum": 0,
+        "eagle_score_sum": 0.0,
+        "sam_score_sum": 0.0,
+        "eagle_depth_sum": 0.0,
+        "sam_depth_sum": 0.0,
+        "sam_match_length_sum": 0.0,
+        "sam_match_length_max": 0,
+        "both_proposed_sum": 0,
+        "truncated_count_sum": 0,
+        "selected_eagle_sum": 0,
+        "selected_sam_sum": 0,
+        "selected_both_sum": 0,
+        "sam_skipped_count": 0,
+        "last_step": None,
+        "last": None,
+    }
+    metadata = {
+        "eagle_nodes": 2,
+        "sam_nodes": 1,
+        "merged_nodes": 3,
+        "final_nodes": 3,
+        "sam_contribution": 1,
+        "dedup_count": 0,
+        "selected_eagle": 2,
+        "selected_sam": 1,
+        "selected_both": 0,
+        "sam_skipped": False,
+    }
+
+    DraftModel.record_naive_fusion(draft, metadata)
+
+    assert draft.fusion_stats["steps"] == 1
+    assert draft.fusion_stats["matched_steps"] == 1
+    assert draft.fusion_stats["eagle_nodes_sum"] == 2
+    assert draft.fusion_stats["sam_nodes_sum"] == 1
+    assert draft.fusion_stats["final_nodes_sum"] == 3
+    assert draft.fusion_stats["last_step"] == metadata
+
+
 def test_rejection_boundary_labels_mark_parent_without_fake_tree_index():
     labels = SamdModel._build_rejection_boundary_labels(
         candidates=[

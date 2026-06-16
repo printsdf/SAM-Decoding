@@ -37,25 +37,20 @@ In contrast, SAM-Decoding uses [suffix automaton](https://en.wikipedia.org/wiki/
 
 At the same time, since SAM-Decoding can compute the longest matching length, it can be combined with the draft model based speculative decoding methods, such as [EAGLE](https://github.com/SafeAILab/EAGLE) and [Token Recycle](https://arxiv.org/abs/2408.08696) that is, automatically selecting to use the retrieval result as the draft or the generation result of the draft model as the draft according to the suffix matching length.
 
-### EAGLE3 with Tail Sidecar
+### EAGLE3 Runtime Budget
 
-We have integrated EAGLE3 with **tail sidecar** support, which extends EAGLE3's prediction capability from the original 32K draft vocabulary to the full target model vocabulary (e.g., 128256 tokens for LLaMA-3.1-8B). The tail sidecar predicts missing vocabulary tokens (V_miss) using low-rank decomposition, providing **+17.4% improvement** in accept length on medical QA benchmarks.
+The EAGLE3 integration exposes the draft tree budget directly so baseline and fusion runs use the same candidate-tree shape.
 
 **Quick start:**
 ```bash
-# Add tail path to your configuration
 python evaluation/inference_samd.py \
     --tree_method eagle3 \
     --tree_model_path /path/to/EAGLE3-model \
-    --eagle3_tail_path ./tail_epoch_10.pt \
-    --eagle3_tail_type auto \
     --eagle3_total_token 60 \
     --eagle3_depth 7 \
     --eagle3_top_k 10 \
     ...
 ```
-
-See the task-local [EAGLE3 Tail Quick Start Guide](.trellis/tasks/06-06-dual-draft-fusion/docs/reference/EAGLE3_TAIL_QUICKSTART.md) for detailed usage.
 
 ## Experiment
 
