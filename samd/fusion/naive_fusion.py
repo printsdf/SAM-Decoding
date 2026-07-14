@@ -37,6 +37,49 @@ def _squeeze_logprobs(logprobs: Any) -> List[float]:
     return [float(value) for value in logprobs]
 
 
+def _normalize_raw_logits(
+    raw_logits: Any,
+    expected_len: int,
+) -> Optional[List[Tuple[Optional[float], Optional[float]]]]:
+    """Coerce raw-logit payload into a token-aligned (z1, z2) list.
+
+    Returns ``None`` when raw logits are unavailable so old traces still load.
+    Each entry may carry ``None`` for missing values (root/start token, or any
+    position the drafter did not expand).
+    """
+    if raw_logits is None:
+        return None
+    if hasattr(raw_logits, "detach"):
+        raw_logits = raw_logits.detach().cpu()
+    if hasattr(raw_logits, "tolist"):
+        raw_logits = raw_logits.tolist()
+    if not isinstance(raw_logits, (list, tuple)):
+        return None
+    # Flatten a leading batch dim if present.
+    while (
+        isinstance(raw_logits, list)
+        and len(raw_logits) == 1
+        and isinstance(raw_logits[0], list)
+    ):
+        raw_logits = raw_logits[0]
+    if len(raw_logits) != expected_len:
+        return None
+    normalized: List[Tuple[Optional[float], Optional[float]]] = []
+    for entry in raw_logits:
+        if entry is None:
+            normalized.append((None, None))
+            continue
+        if isinstance(entry, (list, tuple)):
+            z1 = entry[0] if len(entry) > 0 else None
+            z2 = entry[1] if len(entry) > 1 else None
+        else:
+            z1, z2 = entry, None
+        z1 = float(z1) if z1 is not None else None
+        z2 = float(z2) if z2 is not None else None
+        normalized.append((z1, z2))
+    return normalized
+
+
 def _normalization_groups(nodes: Iterable[CandidateNode]) -> Dict[str, List[float]]:
     groups: Dict[str, List[float]] = {}
     for node in nodes:
@@ -127,9 +170,11 @@ def candidate_trace_records(nodes: Iterable[CandidateNode]) -> List[Dict[str, An
 def _eagle_trace_metadata(
     tree_spec: TreeSpec,
     logprobs: List[float],
+    raw_logits: Optional[List[Tuple[Optional[float], Optional[float]]]] = None,
 ) -> Dict[int, Dict[str, Any]]:
     """Build node-level EAGLE confidence metadata keyed by tree index."""
     has_logprobs = len(logprobs) == len(tree_spec.tokens)
+    has_raw_logits = raw_logits is not None and len(raw_logits) == len(tree_spec.tokens)
     children_by_parent: Dict[int, List[int]] = {}
     for index, parent_index in enumerate(tree_spec.parents[1:], start=1):
         children_by_parent.setdefault(parent_index, []).append(index)
@@ -165,6 +210,16 @@ def _eagle_trace_metadata(
         else:
             cumulative_path_logprob = None
             local_logprob = None
+        # Parent top-1/top-2 raw logits (z1, z2): the parent's raw logits, carried
+        # by each child so the analyzer can derive a parent-level MARS ratio.
+        # MARS does not use the node's own raw logit; sibling_margin (z1 - z2)
+        # remains the cross-check.
+        parent_top1_logit: Optional[float] = None
+        parent_top2_logit: Optional[float] = None
+        if has_raw_logits and raw_logits is not None:
+            z1, z2 = raw_logits[parent_index]
+            parent_top1_logit = z1
+            parent_top2_logit = z2
         metadata[index] = {
             "tree_index": int(index),
             "parent_index": parent_index,
@@ -174,6 +229,8 @@ def _eagle_trace_metadata(
             "rank_among_siblings": rank_by_index.get(index),
             "sibling_margin": margin_by_index.get(index),
             "cumulative_path_logprob": cumulative_path_logprob,
+            "parent_top1_logit": parent_top1_logit,
+            "parent_top2_logit": parent_top2_logit,
         }
     return metadata
 
@@ -182,6 +239,7 @@ def parse_eagle_tree(
     eagle_tree: Dict[str, Any],
     start_token: int,
     eagle_logprobs: Optional[Any] = None,
+    eagle_raw_logits: Optional[Any] = None,
 ) -> List[CandidateNode]:
     """Convert EAGLE3 flattened tree buffers into non-root candidate nodes."""
     tokens = _squeeze_tree_tokens(eagle_tree["tokens"])
@@ -200,7 +258,10 @@ def parse_eagle_tree(
     if raw_logprobs is not None and len(logprobs) != len(tree_spec.tokens):
         raise ValueError("EAGLE logprobs length must match draft_tokens length")
 
-    trace_metadata = _eagle_trace_metadata(tree_spec, logprobs)
+    raw_pairs = eagle_raw_logits if eagle_raw_logits is not None else eagle_tree.get("raw_logits")
+    raw_logits_normalized = _normalize_raw_logits(raw_pairs, len(tree_spec.tokens))
+
+    trace_metadata = _eagle_trace_metadata(tree_spec, logprobs, raw_logits_normalized)
     nodes: List[CandidateNode] = []
     for index in range(1, len(tree_spec.tokens)):
         parent_index = tree_spec.parents[index]
@@ -450,9 +511,15 @@ def fuse_eagle_sam_naive(
     config: FusionConfig,
     sam_match_length: Optional[int] = None,
     eagle_logprobs: Optional[Any] = None,
+    eagle_raw_logits: Optional[Any] = None,
 ) -> FusedTree:
     """Naive EAGLE3 + SAM fusion: merge, deduplicate, score-sort, and truncate."""
-    eagle_nodes = parse_eagle_tree(eagle_tree, start_token, eagle_logprobs=eagle_logprobs)
+    eagle_nodes = parse_eagle_tree(
+        eagle_tree,
+        start_token,
+        eagle_logprobs=eagle_logprobs,
+        eagle_raw_logits=eagle_raw_logits,
+    )
     sam_nodes = parse_sam_sequence(sam_candidates, start_token, sam_match_length)
     oracle_candidates = (
         candidate_trace_records(eagle_nodes + sam_nodes) if config.debug else None

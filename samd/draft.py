@@ -60,14 +60,14 @@ class DraftModel(torch.nn.Module):
             if self.config.fusion_mode != "none"
             else self.config.tree_fusion
         )
-        if mode == "naive" and self.config.fusion_config is not None:
+        if mode in ("naive", "drafter_mars") and self.config.fusion_config is not None:
             budget = self.config.fusion_config.__dict__
         elif mode == "sam_tree_union_prune":
             budget = self.sam_tree_budget.to_dict()
         else:
             budget = self.sam_prefix_budget.to_dict()
         self.fusion_stats = {
-            "enabled": mode in ("naive", "sam_tree_union_prune", "eagle_prefix_sam_expand"),
+            "enabled": mode in ("naive", "drafter_mars", "sam_tree_union_prune", "eagle_prefix_sam_expand"),
             "mode": mode,
             "budget": budget,
             "steps": 0,

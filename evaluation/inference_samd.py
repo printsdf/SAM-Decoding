@@ -158,7 +158,7 @@ if __name__ == "__main__":
         "--fusion_mode",
         type=str,
         default="none",
-        choices=["none", "naive", "rejection_boundary"],
+        choices=["none", "naive", "rejection_boundary", "drafter_mars"],
     )
     parser.add_argument("--fusion_max_draft_tokens", type=int, default=60)
     parser.add_argument(
@@ -174,6 +174,7 @@ if __name__ == "__main__":
         choices=["score", "depth_first"],
     )
     parser.add_argument("--rejection_conf_threshold", type=float, default=0.5)
+    parser.add_argument("--drafter_mars_theta", type=float, default=0.90)
     parser.add_argument("--boundary_graft_threshold", type=float, default=1.5)
     parser.add_argument("--boundary_graft_max_sam_nodes", type=int, default=8)
     parser.add_argument("--boundary_graft_min_depth", type=int, default=3)
@@ -237,6 +238,7 @@ if __name__ == "__main__":
     print("len_threshold:", args.samd_len_threshold)
     print("tree_fusion:", args.tree_fusion)
     print("fusion_mode:", args.fusion_mode)
+    print("drafter_mars_theta:", args.drafter_mars_theta)
     print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
     print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
     print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
@@ -308,6 +310,7 @@ if __name__ == "__main__":
         fusion_dedup_strategy=args.fusion_dedup_strategy,
         fusion_truncate_strategy=args.fusion_truncate_strategy,
         rejection_conf_threshold=args.rejection_conf_threshold,
+        drafter_mars_theta=args.drafter_mars_theta,
         boundary_graft_threshold=args.boundary_graft_threshold,
         boundary_graft_max_sam_nodes=args.boundary_graft_max_sam_nodes,
         boundary_graft_min_depth=args.boundary_graft_min_depth,

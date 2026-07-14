@@ -1,3 +1,4 @@
+import math
 import torch
 from typing import Dict, List, Tuple, Union
 
@@ -80,9 +81,11 @@ class Eagle3(TreeModel):
         self,
         start_token: int,
         return_logprobs: bool = False,
+        return_raw_logits: bool = False,
     ) -> Union[
         Tuple[List[int], Dict[str, torch.Tensor]],
         Tuple[List[int], Dict[str, torch.Tensor], List[float]],
+        Tuple[List[int], Dict[str, torch.Tensor], List[float], List[Tuple[float, float]]],
     ]:
         start_token = torch.tensor([start_token], dtype=torch.long, device=self.device)
         # input_ids carries the full history (cumulative_tokens + start_token);
@@ -91,23 +94,46 @@ class Eagle3(TreeModel):
         input_ids_full = torch.cat((self.cumulative_tokens, start_token), dim=-1)
         pending = self.pending_hidden_states
         self.pending_hidden_states = None
-        (
-            draft_tokens,
-            retrieve_indices,
-            tree_mask,
-            tree_position_ids,
-            draft_logprobs,
-        ) = self.model.topK_genrate(
+        topk_outputs = self.model.topK_genrate(
             pending[None],
             input_ids_full[None],
             self.head,
+            return_raw_logits=return_raw_logits,
         )
+        if return_raw_logits:
+            (
+                draft_tokens,
+                retrieve_indices,
+                tree_mask,
+                tree_position_ids,
+                draft_logprobs,
+                draft_raw_logits,
+            ) = topk_outputs
+        else:
+            (
+                draft_tokens,
+                retrieve_indices,
+                tree_mask,
+                tree_position_ids,
+                draft_logprobs,
+            ) = topk_outputs
         pred_ids = draft_tokens.view(-1).tolist()
         buffers_kwargs = {
             "tree_attn_mask": tree_mask,
             "tree_position_ids": tree_position_ids,
             "tree_retrieve_indices": retrieve_indices,
         }
+        if return_raw_logits:
+            logprobs = [float(value) for value in draft_logprobs.view(-1).tolist()]
+            raw_logits_rows = draft_raw_logits.view(-1, 2).tolist()
+            # Root/start token has no parent expansion; emit (None, None).
+            raw_pairs: List[Tuple[float, float]] = [(None, None)]
+            for row in raw_logits_rows[1:]:
+                z1, z2 = float(row[0]), float(row[1])
+                raw_pairs.append(
+                    (None if math.isnan(z1) else z1, None if math.isnan(z2) else z2)
+                )
+            return pred_ids, buffers_kwargs, logprobs, raw_pairs
         if return_logprobs:
             logprobs = [float(value) for value in draft_logprobs.view(-1).tolist()]
             return pred_ids, buffers_kwargs, logprobs

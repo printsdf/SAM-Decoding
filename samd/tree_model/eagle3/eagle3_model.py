@@ -238,8 +238,38 @@ class Eagle3Model(nn.Module):
             return hidden_states, next_decoder_cache
         return hidden_states
 
+    def _gather_parent_top2_raw_logits(
+        self,
+        headout: torch.Tensor,
+        topk_index: torch.Tensor,
+    ) -> torch.Tensor:
+        """Gather each parent's top-2 raw logits, broadcast to its top_k children.
+
+        ``headout`` is ``(num_parents, draft_vocab_size)``. Returns shape
+        ``(1, num_parents * top_k, 2)`` so it concatenates alongside
+        ``logprobs_list`` (which is ``(1, num_parents, top_k)`` per layer and
+        later flattened to ``num_parents * top_k``).
+        """
+        k = min(2, int(headout.shape[-1]))
+        top2_values, _ = torch.topk(headout, k, dim=-1)
+        if k == 1:
+            pad = top2_values.new_zeros(top2_values.shape)
+            top2_values = torch.cat((top2_values, pad), dim=-1)
+        # Broadcast each parent's (z1, z2) across its top_k children so the
+        # downstream ``top_scores_index`` reselection aligns with logprobs_list.
+        top_k = int(topk_index.shape[-1])
+        broadcast = top2_values.unsqueeze(1).expand(-1, top_k, -1).reshape(1, -1, 2)
+        return broadcast
+
     @torch.no_grad()
-    def topK_genrate(self, hidden_states, input_ids, head, logits_processor=None):
+    def topK_genrate(
+        self,
+        hidden_states,
+        input_ids,
+        head,
+        logits_processor=None,
+        return_raw_logits: bool = False,
+    ):
         input_ids = input_ids.to(hidden_states.device)
         total_tokens = self.total_tokens
         depth = self.depth
@@ -251,6 +281,10 @@ class Eagle3Model(nn.Module):
         logprobs_list = []
         parents_list = []
         ss_token = []
+        # Parent top-1/top-2 raw logits parallel to logprobs_list. Each entry is
+        # shape (1, top_k, 2); the parent's z1/z2 are shared across its top_k
+        # children, then reselected by top_scores_index downstream.
+        raw_logits_list: List[torch.Tensor] = []
 
         input_ids = input_ids[:, 1:]
         input_ids = input_ids.to(hidden_states.device)
@@ -285,6 +319,11 @@ class Eagle3Model(nn.Module):
         scores = topk_p[0]
         scores_list.append(scores[None])
         logprobs_list.append(scores[None])
+        # Parent top-2 raw logits (z1, z2) for this expansion. The root parent
+        # is the start token; store None-aligned placeholder via the same shape
+        # so the downstream top_scores_index reselection stays aligned.
+        root_raw_logits = self._gather_parent_top2_raw_logits(last_headout, topk_index)
+        raw_logits_list.append(root_raw_logits)
         parents_list.append(torch.zeros(1, dtype=torch.long, device=scores.device))
         if self.config.vocab_size == self.config.draft_vocab_size:
             ss_token.append(topk_index)
@@ -319,6 +358,13 @@ class Eagle3Model(nn.Module):
 
             top = torch.topk(last_p, top_k, dim=-1)
             topk_index, topk_p = top.indices, top.values
+
+            # Each of the top_k active parents expanded top_k children. Gather
+            # the parent's top-2 raw logits aligned with the (top_k, top_k)
+            # child layout, so the downstream top_scores_index reselection
+            # matches logprobs_list exactly.
+            depth_raw_logits = self._gather_parent_top2_raw_logits(last_headout, topk_index)
+            raw_logits_list.append(depth_raw_logits)
 
             cu_scores = topk_p + scores[:, None]
 
@@ -358,6 +404,23 @@ class Eagle3Model(nn.Module):
             dim=0,
         )
 
+        if return_raw_logits:
+            # Reselect parent (z1, z2) by the same top_scores_index used for
+            # draft_logprobs, then prepend a None-aligned placeholder row for
+            # the root/start token (it has no parent expansion).
+            raw_logits_flat = torch.cat(raw_logits_list, dim=0).view(-1, 2)
+            draft_raw_logits = raw_logits_flat[top_scores_index]
+            root_placeholder = torch.full(
+                (1, 2),
+                float("nan"),
+                dtype=draft_raw_logits.dtype,
+                device=draft_raw_logits.device,
+            )
+            draft_raw_logits = torch.cat((root_placeholder, draft_raw_logits), dim=0)
+            draft_raw_logits = draft_raw_logits[None]
+        else:
+            draft_raw_logits = None
+
         draft_parents = torch.cat(parents_list, dim=0)[top_scores_index // top_k].long()
         mask_index = torch.searchsorted(top_scores_index, draft_parents - 1, right=False)
         mask_index[draft_parents == 0] = -1
@@ -375,7 +438,7 @@ class Eagle3Model(nn.Module):
         draft_tokens = draft_tokens[None]
         draft_logprobs = draft_logprobs[None]
 
-        del parents_list, scores_list, logprobs_list, ss_token, ss_token_list, draft_parents
+        del parents_list, scores_list, logprobs_list, ss_token, ss_token_list, draft_parents, raw_logits_list
 
         max_depth = torch.max(tree_position_ids) + 1
         noleaf_index = torch.unique(mask_index).tolist()
@@ -412,4 +475,6 @@ class Eagle3Model(nn.Module):
         del mask_index, mask_index_list, noleaf_index, noleaf_num, leaf_num, max_depth, rid
         tree_position_ids = tree_position_ids[None].to(hidden_states.device)
 
+        if return_raw_logits:
+            return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, draft_logprobs, draft_raw_logits
         return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, draft_logprobs

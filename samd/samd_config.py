@@ -29,7 +29,7 @@ class SamdConfig:
         "eagle_prefix_sam_expand",
     ] = field(default="none")
     fusion_mode: Literal[
-        "none", "naive", "payoff_aware", "tree_aware", "rejection_boundary", "boundary_graft"
+        "none", "naive", "payoff_aware", "tree_aware", "rejection_boundary", "boundary_graft", "drafter_mars"
     ] = field(default="none")
     fusion_max_draft_tokens: int = field(default=60)
     fusion_dedup_strategy: Literal["max_score", "sum_score", "keep_both"] = field(
@@ -41,6 +41,8 @@ class SamdConfig:
     boundary_graft_max_sam_nodes: int = field(default=8)  # Max SAM nodes to graft
     boundary_graft_min_depth: int = field(default=3)  # Min depth for prediction
     boundary_graft_max_depth: int = field(default=8)  # Max depth for prediction
+    drafter_mars_theta: float = field(default=0.90)
+    drafter_mars_variant: Literal["top_path"] = field(default="top_path")
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -73,8 +75,16 @@ class SamdConfig:
             raise ValueError(
                 'tree_fusion="{}" only supports tree_method="eagle3"'.format(self.tree_fusion)
             )
-        if self.fusion_mode not in ("none", "naive", "rejection_boundary", "boundary_graft"):
+        if self.fusion_mode not in ("none", "naive", "rejection_boundary", "boundary_graft", "drafter_mars"):
             raise ValueError("unsupported fusion_mode: {}".format(self.fusion_mode))
+        if not isinstance(self.drafter_mars_theta, Real) or isinstance(self.drafter_mars_theta, bool):
+            raise ValueError("drafter_mars_theta must be a positive number")
+        if self.drafter_mars_theta <= 0:
+            raise ValueError("drafter_mars_theta must be a positive number")
+        if self.drafter_mars_variant != "top_path":
+            raise ValueError(
+                "unsupported drafter_mars_variant: {}".format(self.drafter_mars_variant)
+            )
         if self.fusion_mode != "none" and self.tree_method != "eagle3":
             raise ValueError(
                 'fusion_mode="{}" only supports tree_method="eagle3"'.format(self.fusion_mode)
@@ -173,7 +183,7 @@ class SamdConfig:
         return FusionConfig(
             mode=(
                 "naive"
-                if self.fusion_mode == "rejection_boundary"
+                if self.fusion_mode in ("rejection_boundary", "drafter_mars")
                 else self.fusion_mode
             ),
             max_draft_tokens=self.fusion_max_draft_tokens,
