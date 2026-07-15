@@ -210,14 +210,14 @@ def _eagle_trace_metadata(
         else:
             cumulative_path_logprob = None
             local_logprob = None
-        # Parent top-1/top-2 raw logits (z1, z2): the parent's raw logits, carried
-        # by each child so the analyzer can derive a parent-level MARS ratio.
-        # MARS does not use the node's own raw logit; sibling_margin (z1 - z2)
-        # remains the cross-check.
+        # Capture contract: raw_logits[i] is the (z1, z2) of the parent expansion
+        # that produced node i (root is (None, None)). Attach that pair as
+        # parent_top1/top2_logit on the child. sibling_margin (z1 - z2 via
+        # logprobs) remains the cross-check.
         parent_top1_logit: Optional[float] = None
         parent_top2_logit: Optional[float] = None
         if has_raw_logits and raw_logits is not None:
-            z1, z2 = raw_logits[parent_index]
+            z1, z2 = raw_logits[index]
             parent_top1_logit = z1
             parent_top2_logit = z2
         metadata[index] = {

@@ -47,18 +47,18 @@ decision) so it is unit-testable without a model.
 - Fusion stats: mode added to the enabled set; per-step metadata records
   `ratio_triggered`, max top-path ratio, theta.
 
-## Open issue: offline trace enrichment raw-pair indexing (found 2026-07-14)
+## Resolved: offline raw-pair indexing (found 2026-07-14, fixed 2026-07-15)
 
-Verified capture convention in `eagle3_model.topK_genrate`: `raw_pairs[i]` holds
-the (z1, z2) of the expansion that PRODUCED node i (child-index convention;
-root row is a NaN placeholder). The online gate reads pairs at the greedy
-child, which is correct. But offline `naive_fusion._eagle_trace_metadata`
-(~line 220) reads `raw_logits[parent_index]` — under this convention that is
-the GRANDPARENT's expansion pair, and depth-1 candidates get None. Suspected
-one-level shift in all Stage-1 offline ratio calibration (theta grid results
-possibly computed on shifted ratios). Not fixed in this session (would
-invalidate Stage-1 numbers); needs a user decision + recalibration if
-confirmed.
+Capture convention in `eagle3_model.topK_genrate`: `raw_pairs[i]` holds the
+(z1, z2) of the expansion that PRODUCED node i (child-index convention; root
+row is a NaN / `(None, None)` placeholder). Online gate already read pairs at
+the greedy child (correct). Offline `naive_fusion._eagle_trace_metadata` had
+been reading `raw_logits[parent_index]` (grandparent under this convention;
+depth-1 candidates got None). Fixed to `raw_logits[index]` so
+`parent_top1_logit`/`parent_top2_logit` on each child match the capture
+contract and the online gate. **Stage-1 offline ratio calibration numbers
+computed before this fix were one-level shifted and must be recalibrated**
+on a fresh raw-logit trace; do not reuse pre-fix theta/heldout metrics.
 
 ## Revision (2026-07-14, user decision): graft repair replaces naive fuse
 

@@ -17,7 +17,7 @@ from samd.tree_model.fusion import TreeSpec
 from samd.utils import SamdGenerationConfig, gen_candidates
 
 
-def _eagle_tree(tokens=None, parents=None, logprobs=None):
+def _eagle_tree(tokens=None, parents=None, logprobs=None, raw_logits=None):
     spec = TreeSpec(
         tokens=tokens or [10, 11, 12, 13],
         parents=parents or [-1, 0, 1, 0],
@@ -31,6 +31,8 @@ def _eagle_tree(tokens=None, parents=None, logprobs=None):
     }
     if logprobs is not None:
         tree["logprobs"] = logprobs
+    if raw_logits is not None:
+        tree["raw_logits"] = raw_logits
     return tree
 
 
@@ -50,11 +52,46 @@ def test_parse_eagle_tree_uses_tree_mask_parents_and_logprobs():
     assert nodes[0].metadata["tree_index"] == 1
     assert nodes[0].metadata["parent_index"] == 0
     assert nodes[0].metadata["rank_among_siblings"] == 1
-    assert nodes[0].metadata["sibling_margin"] == 0.5
+    assert abs(nodes[0].metadata["sibling_margin"] - 0.5) < 1e-9
     assert nodes[1].metadata["tree_index"] == 2
     assert nodes[1].metadata["parent_index"] == 1
     assert nodes[1].metadata["sibling_margin"] is None
     assert abs(nodes[1].metadata["cumulative_path_logprob"] + 1.6) < 1e-9
+
+
+def test_parse_eagle_tree_populates_parent_raw_logits():
+    # raw_logits is a token-aligned list of (z1, z2); index 0 is the root with
+    # no parent expansion. Each child carries its parent's (z1, z2).
+    raw_logits = [(None, None), (3.0, 2.7), (1.5, 1.2), (3.0, 2.7)]
+    nodes = parse_eagle_tree(
+        _eagle_tree(logprobs=[0.0, -0.2, -1.4, -0.7], raw_logits=raw_logits),
+        start_token=10,
+    )
+
+    # Node 11 / 13 (parent=0) carry raw_logits[1] / raw_logits[3] = root expansion.
+    assert nodes[0].metadata["parent_top1_logit"] == 3.0
+    assert nodes[0].metadata["parent_top2_logit"] == 2.7
+    assert nodes[2].metadata["parent_top1_logit"] == 3.0
+    assert nodes[2].metadata["parent_top2_logit"] == 2.7
+    # Node 12 (parent=1) carries raw_logits[2] = parent node 1's expansion.
+    assert nodes[1].metadata["parent_top1_logit"] == 1.5
+    assert nodes[1].metadata["parent_top2_logit"] == 1.2
+    # Existing logprob-derived fields are preserved.
+    assert nodes[0].metadata["local_logprob"] == -0.2
+    assert abs(nodes[0].metadata["sibling_margin"] - 0.5) < 1e-9
+
+
+def test_parse_eagle_tree_loads_old_traces_without_raw_logits():
+    nodes = parse_eagle_tree(
+        _eagle_tree(logprobs=[0.0, -0.2, -1.4, -0.7]),
+        start_token=10,
+    )
+
+    for node in nodes:
+        assert node.metadata["parent_top1_logit"] is None
+        assert node.metadata["parent_top2_logit"] is None
+        # existing fields still present
+        assert node.metadata["local_logprob"] is not None
 
 
 def test_candidate_trace_records_exports_enriched_eagle_fields():
@@ -70,7 +107,7 @@ def test_candidate_trace_records_exports_enriched_eagle_fields():
     assert records[0]["path_tokens"] == [10, 11]
     assert records[0]["local_logprob"] == -0.2
     assert records[0]["rank_among_siblings"] == 1
-    assert records[0]["sibling_margin"] == 0.5
+    assert abs(records[0]["sibling_margin"] - 0.5) < 1e-9
     assert records[0]["cumulative_path_logprob"] == -0.2
 
 
@@ -177,7 +214,7 @@ def test_fuse_eagle_sam_naive_debug_records_raw_oracle_candidates():
     assert records[0]["token_path"] == [10, 11]
     assert records[0]["tree_index"] == 1
     assert records[0]["parent_index"] == 0
-    assert records[0]["sibling_margin"] == 0.5
+    assert abs(records[0]["sibling_margin"] - 0.5) < 1e-9
     assert records[-1]["sam_match_length"] == 4
     assert "accepted" not in records[0]
 
@@ -210,7 +247,7 @@ def test_samd_config_fusion_validation():
 
 
 class _MockTreeModel:
-    def gen_draft(self, start_token, return_logprobs=False):
+    def gen_draft(self, start_token, return_logprobs=False, return_raw_logits=False):
         tree = _eagle_tree(tokens=[start_token, 11, 12], parents=[-1, 0, 1])
         pred_ids = tree["tokens"].view(-1).tolist()
         buffers = {
@@ -218,9 +255,32 @@ class _MockTreeModel:
             "tree_position_ids": tree["tree_position_ids"],
             "tree_retrieve_indices": tree["tree_retrieve_indices"],
         }
+        logprobs = [0.0, -0.1, -0.4]
+        raw_logits = [(None, None), (3.0, 2.7), (1.5, 1.2)]
+        if return_raw_logits:
+            return pred_ids, buffers, logprobs, raw_logits
         if return_logprobs:
-            return pred_ids, buffers, [0.0, -0.1, -0.4]
+            return pred_ids, buffers, logprobs
         return pred_ids, buffers
+
+
+def test_gen_draft_return_contracts_are_backward_compatible():
+    model = _MockTreeModel()
+
+    two_tuple = model.gen_draft(10)
+    assert len(two_tuple) == 2
+
+    three_tuple = model.gen_draft(10, return_logprobs=True)
+    assert len(three_tuple) == 3
+    assert three_tuple[2] == [0.0, -0.1, -0.4]
+
+    four_tuple = model.gen_draft(10, return_logprobs=True, return_raw_logits=True)
+    assert len(four_tuple) == 4
+    assert four_tuple[2] == [0.0, -0.1, -0.4]
+    # Root/start token has no parent expansion -> (None, None).
+    assert four_tuple[3][0] == (None, None)
+    assert four_tuple[3][1] == (3.0, 2.7)
+    assert four_tuple[3][2] == (1.5, 1.2)
 
 
 class _MockSam:
