@@ -304,10 +304,19 @@ def gen_candidates(
         )
 
     if samd_config.fusion_mode == "drafter_mars":
+        from .fusion.drafter_mars_adaptive import resolve_graft_budget
         from .fusion.drafter_mars_gate import top_path_ratio_trigger
         from .tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
 
-        theta = samd_config.drafter_mars_theta
+        # Adaptive-theta controller (per request, created in DraftModel.reset);
+        # None unless drafter_mars_adaptive_theta is on — metadata's
+        # drafter_mars_theta always records the theta actually used.
+        controller = getattr(draft, "drafter_mars_controller", None)
+        theta = (
+            controller.theta
+            if controller is not None
+            else samd_config.drafter_mars_theta
+        )
         timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
         try:
             index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
@@ -384,13 +393,21 @@ def gen_candidates(
             if profiler is not None:
                 profiler.end_section("fusion_logic", timer)
 
+        # Only steps that reach the ratio gate update the trigger-rate EMA.
+        if controller is not None:
+            controller.update(ratio_triggered)
+
         sam_candidates = None
         sam_match_length = 0
         repair = samd_config.drafter_mars_repair
         trigger_depth = None
         skip_reason = None
 
-        if ratio_triggered and repair == "graft":
+        if (
+            ratio_triggered
+            and repair == "graft"
+            and samd_config.drafter_mars_max_grafts == 1
+        ):
             from .fusion.boundary_graft import graft_sam_at_depth
             from .fusion.drafter_mars_gate import earliest_top_path_trigger
 
@@ -404,6 +421,13 @@ def gen_candidates(
                 skip_reason = "no_trigger_info"
             else:
                 trigger_depth = int(trigger.parent_depth)
+                graft_budget = resolve_graft_budget(
+                    samd_config.drafter_mars_budget_mode,
+                    samd_config.boundary_graft_max_sam_nodes,
+                    trigger.parent_depth,
+                    trigger.ratio,
+                    theta,
+                )
                 # Greedy top-path prefix: root .. triggering parent (inclusive).
                 chain = []
                 node = trigger.parent_index
@@ -440,14 +464,14 @@ def gen_candidates(
                         sam_candidates = draft.sam_dyn.gen_draft_raw(
                             dyn_index,
                             sam_start_token,
-                            samd_config.boundary_graft_max_sam_nodes,
+                            graft_budget,
                         )
                         sam_match_length = int(dyn_length)
                     else:
                         sam_candidates = draft.sam_static.gen_draft_raw(
                             static_index,
                             sam_start_token,
-                            samd_config.boundary_graft_max_sam_nodes,
+                            graft_budget,
                         )
                         sam_match_length = max(int(match_static_prefix), 0)
                 finally:
@@ -474,7 +498,7 @@ def gen_candidates(
                             eagle_tree=tree_spec,
                             sam_candidates=sam_candidates[1:],
                             parent_node_idx=trigger.parent_index,
-                            max_added_nodes=samd_config.boundary_graft_max_sam_nodes,
+                            max_added_nodes=graft_budget,
                         )
                         sam_nodes_added = len(fused_tree_spec.tokens) - len(
                             tree_spec.tokens
@@ -529,6 +553,171 @@ def gen_candidates(
                             fused_buffers,
                         )
                     skip_reason = "graft_added_nothing"
+
+        if (
+            ratio_triggered
+            and repair == "graft"
+            and samd_config.drafter_mars_max_grafts > 1
+        ):
+            from .fusion.boundary_graft import graft_sam_at_depth
+            from .fusion.drafter_mars_gate import all_top_path_triggers
+
+            triggers = all_top_path_triggers(
+                eagle_parents,
+                eagle_logprobs,
+                eagle_raw_logits,
+                theta,
+            )
+            selected = []
+            total_planned = 0
+            timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
+            try:
+                for trigger in triggers:
+                    if len(selected) >= samd_config.drafter_mars_max_grafts:
+                        break
+                    remaining = samd_config.drafter_mars_total_graft_nodes - total_planned
+                    if remaining <= 0:
+                        break
+                    budget = min(
+                        resolve_graft_budget(
+                            samd_config.drafter_mars_budget_mode,
+                            samd_config.boundary_graft_max_sam_nodes,
+                            trigger.parent_depth,
+                            trigger.ratio,
+                            theta,
+                        ),
+                        remaining,
+                    )
+                    if budget <= 0:
+                        break
+                    chain = []
+                    node = trigger.parent_index
+                    while node != -1:
+                        chain.append(node)
+                        node = eagle_parents[node]
+                    chain.reverse()
+                    prefix_tokens = [int(eagle_tokens[i]) for i in chain]
+                    dyn_index, dyn_length = (
+                        draft.sam_dyn.cur_index,
+                        draft.sam_dyn.cur_length,
+                    )
+                    static_index, static_length = (
+                        draft.sam_static.cur_index,
+                        draft.sam_static.cur_length,
+                    )
+                    for token in prefix_tokens:
+                        dyn_index, dyn_length = draft.sam_dyn.transfer_state(
+                            dyn_index, dyn_length, token
+                        )
+                        static_index, static_length = draft.sam_static.transfer_state(
+                            static_index, static_length, token
+                        )
+                    match_static_prefix = static_length - draft.len_bias
+                    if dyn_length >= match_static_prefix:
+                        continuation = draft.sam_dyn.gen_draft_raw(
+                            dyn_index, prefix_tokens[-1], budget
+                        )
+                        match_length = int(dyn_length)
+                    else:
+                        continuation = draft.sam_static.gen_draft_raw(
+                            static_index, prefix_tokens[-1], budget
+                        )
+                        match_length = max(int(match_static_prefix), 0)
+                    if continuation is None or len(continuation) <= 1:
+                        # Empty continuation does not consume a graft slot.
+                        continue
+                    continuation = continuation[1 : budget + 1]
+                    total_planned += len(continuation)
+                    selected.append(
+                        (trigger, continuation, match_length, len(prefix_tokens))
+                    )
+            finally:
+                if profiler is not None:
+                    profiler.end_section("draft_sam", timer)
+
+            if not selected:
+                skip_reason = "empty_sam_continuation"
+            else:
+                timer = (
+                    profiler.start_section("fusion_logic")
+                    if profiler is not None
+                    else 0.0
+                )
+                try:
+                    fused_tree_spec = TreeSpec(
+                        tokens=[int(token) for token in eagle_tokens],
+                        parents=list(eagle_parents),
+                    )
+                    base_nodes = len(fused_tree_spec.tokens)
+                    grafts_meta = []
+                    # Grafts only append nodes, so original parent indices stay
+                    # valid across sequential grafts.
+                    for trigger, continuation, _match, _prefix in selected:
+                        before = len(fused_tree_spec.tokens)
+                        fused_tree_spec = graft_sam_at_depth(
+                            eagle_tree=fused_tree_spec,
+                            sam_candidates=continuation,
+                            parent_node_idx=trigger.parent_index,
+                            max_added_nodes=len(continuation),
+                        )
+                        grafts_meta.append({
+                            "depth": int(trigger.parent_depth),
+                            "ratio": float(trigger.ratio),
+                            "nodes_added": len(fused_tree_spec.tokens) - before,
+                        })
+                    sam_nodes_added = len(fused_tree_spec.tokens) - base_nodes
+                    if sam_nodes_added > 0:
+                        fused_buffers = fused_tree_spec.to_buffers(
+                            device=device,
+                            mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
+                        )
+                        fused_tokens = torch.tensor(
+                            fused_tree_spec.tokens,
+                            dtype=torch.long,
+                            device=device,
+                        )
+                        tokens = fused_tokens.unsqueeze(0)
+                        tokens_ext = torch.cat(
+                            [
+                                fused_tokens,
+                                torch.zeros(1, dtype=torch.long, device=device),
+                            ]
+                        )
+                        candidate_tokens = tokens_ext[
+                            fused_buffers["tree_retrieve_indices"]
+                        ]
+                finally:
+                    if profiler is not None:
+                        profiler.end_section("fusion_logic", timer)
+
+                if sam_nodes_added > 0:
+                    metadata = {
+                        "mode": "drafter_mars",
+                        "repair": "graft",
+                        "ratio_triggered": True,
+                        "max_top_path_ratio": float(max_top_path_ratio),
+                        "trigger_depth": int(selected[0][0].parent_depth),
+                        "trigger_ratio": float(selected[0][0].ratio),
+                        "drafter_mars_theta": float(theta),
+                        "graft_count": len(grafts_meta),
+                        "grafts": grafts_meta,
+                        "eagle_nodes": eagle_nonroot_nodes,
+                        "sam_nodes": int(sam_nodes_added),
+                        "final_nodes": len(fused_tree_spec.tokens) - 1,
+                        "sam_match_length": int(max(item[2] for item in selected)),
+                        "prefix_length": int(selected[0][3]),
+                        "sam_skipped": False,
+                    }
+                    draft.record_naive_fusion(metadata)
+                    if profiler is not None:
+                        profiler.add_step_metadata(metadata)
+                    return Candidates(
+                        CandidateType.tree,
+                        tokens,
+                        candidate_tokens,
+                        fused_buffers,
+                    )
+                skip_reason = "graft_added_nothing"
 
         if ratio_triggered and repair == "naive_fuse":
             timer = profiler.start_section("draft_sam") if profiler is not None else 0.0

@@ -44,6 +44,12 @@ class SamdConfig:
     drafter_mars_theta: float = field(default=0.90)
     drafter_mars_variant: Literal["top_path"] = field(default="top_path")
     drafter_mars_repair: Literal["graft", "naive_fuse"] = field(default="graft")
+    drafter_mars_adaptive_theta: bool = field(default=False)
+    drafter_mars_target_trigger_rate: float = field(default=0.75)
+    drafter_mars_theta_step: float = field(default=0.02)
+    drafter_mars_budget_mode: Literal["fixed", "depth", "ratio"] = field(default="fixed")
+    drafter_mars_max_grafts: int = field(default=1)
+    drafter_mars_total_graft_nodes: int = field(default=16)
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -90,6 +96,36 @@ class SamdConfig:
             raise ValueError(
                 "unsupported drafter_mars_repair: {}".format(self.drafter_mars_repair)
             )
+        if not isinstance(self.drafter_mars_adaptive_theta, bool):
+            raise ValueError("drafter_mars_adaptive_theta must be a bool")
+        if not isinstance(self.drafter_mars_target_trigger_rate, Real) or isinstance(
+            self.drafter_mars_target_trigger_rate, bool
+        ):
+            raise ValueError("drafter_mars_target_trigger_rate must be in (0, 1)")
+        if not 0.0 < self.drafter_mars_target_trigger_rate < 1.0:
+            raise ValueError("drafter_mars_target_trigger_rate must be in (0, 1)")
+        if not isinstance(self.drafter_mars_theta_step, Real) or isinstance(
+            self.drafter_mars_theta_step, bool
+        ):
+            raise ValueError("drafter_mars_theta_step must be a positive number")
+        if self.drafter_mars_theta_step <= 0:
+            raise ValueError("drafter_mars_theta_step must be a positive number")
+        if self.drafter_mars_budget_mode not in ("fixed", "depth", "ratio"):
+            raise ValueError(
+                "unsupported drafter_mars_budget_mode: {}".format(self.drafter_mars_budget_mode)
+            )
+        if not isinstance(self.drafter_mars_max_grafts, int) or isinstance(
+            self.drafter_mars_max_grafts, bool
+        ):
+            raise ValueError("drafter_mars_max_grafts must be a positive integer")
+        if self.drafter_mars_max_grafts < 1:
+            raise ValueError("drafter_mars_max_grafts must be a positive integer")
+        if not isinstance(self.drafter_mars_total_graft_nodes, int) or isinstance(
+            self.drafter_mars_total_graft_nodes, bool
+        ):
+            raise ValueError("drafter_mars_total_graft_nodes must be a positive integer")
+        if self.drafter_mars_total_graft_nodes < 1:
+            raise ValueError("drafter_mars_total_graft_nodes must be a positive integer")
         if self.fusion_mode != "none" and self.tree_method != "eagle3":
             raise ValueError(
                 'fusion_mode="{}" only supports tree_method="eagle3"'.format(self.fusion_mode)

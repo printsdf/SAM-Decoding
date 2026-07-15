@@ -72,6 +72,33 @@ def top_path_ratio_trigger(
     return max_ratio > theta, max_ratio
 
 
+def all_top_path_triggers(
+    parents: Sequence[int],
+    logprobs: Optional[Sequence[float]],
+    raw_pairs: Optional[Sequence[Optional[Tuple[Optional[float], Optional[float]]]]],
+    theta: float,
+) -> List[TriggerInfo]:
+    """Every triggering top-path parent, in descent (ascending depth) order.
+
+    Same pair-at-greedy-child read as ``earliest_top_path_trigger``; when
+    non-empty, the first element equals its result.
+    """
+    if raw_pairs is None or len(raw_pairs) != len(parents):
+        return []
+    triggers: List[TriggerInfo] = []
+    for depth, child_index in enumerate(greedy_top_path(parents, logprobs)[1:]):
+        pair = raw_pairs[child_index]
+        if pair is None:
+            continue
+        z1, z2 = pair
+        if z1 is None or z2 is None:
+            continue
+        ratio = float(z2) / (float(z1) + RATIO_EPS)
+        if ratio > theta:
+            triggers.append(TriggerInfo(parents[child_index], depth, child_index, ratio))
+    return triggers
+
+
 def earliest_top_path_trigger(
     parents: Sequence[int],
     logprobs: Optional[Sequence[float]],

@@ -52,6 +52,7 @@ class DraftModel(torch.nn.Module):
         self.len_threshold = config.len_threshold
         self.sam_tree_budget = SamTreeBudget.from_config(config)
         self.sam_prefix_budget = SamPrefixBudget.from_config(config)
+        self.drafter_mars_controller = None
         self.reset_fusion_stats()
 
     def reset_fusion_stats(self):
@@ -253,6 +254,19 @@ class DraftModel(torch.nn.Module):
         self.sam_static.reset()
         self.tree_model.reset()
         self.reset_fusion_stats()
+        if (
+            self.config.fusion_mode == "drafter_mars"
+            and self.config.drafter_mars_adaptive_theta
+        ):
+            from .fusion.drafter_mars_adaptive import AdaptiveThetaController
+
+            self.drafter_mars_controller = AdaptiveThetaController(
+                theta_init=self.config.drafter_mars_theta,
+                target_rate=self.config.drafter_mars_target_trigger_rate,
+                step=self.config.drafter_mars_theta_step,
+            )
+        else:
+            self.drafter_mars_controller = None
 
     def lookup(self, start_token: int):
         index_dyn, match_dyn = self.sam_dyn.lookup(start_token)
