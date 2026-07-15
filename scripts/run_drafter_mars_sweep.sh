@@ -23,6 +23,8 @@ BASELINE_ID=${BASELINE_ID:-samd_eagle3_baseline}
 FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-https://open.feishu.cn/open-apis/bot/v2/hook/73fdb716-16d7-4948-8e9a-3db134b5d234}
 # ==================== 配置结束 ====================
 
+export PYTHONPATH="$(pwd)${PYTHONPATH:+:${PYTHONPATH}}"
+
 notify_feishu() {
   FEISHU_WEBHOOK="$FEISHU_WEBHOOK" TEXT="$1" python3 - <<'PY' || echo "feishu notify failed"
 import json, os, urllib.request

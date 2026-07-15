@@ -2,7 +2,7 @@
 """Compare MAT / tokens-per-second across answer jsonl files.
 
 Usage:
-    python3 scripts/compare_speed.py BASELINE.jsonl METHOD.jsonl [MORE.jsonl ...]
+    python3 scripts/speed.py BASELINE.jsonl METHOD.jsonl [MORE.jsonl ...]
 
 The first file is the reference; every file reports absolute stats and
 MAT gain / speedup relative to it. Records with missing turns (ERROR

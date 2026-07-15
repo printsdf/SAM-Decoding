@@ -20,6 +20,8 @@ ANSWER_DIR=evaluation/data/humaneval/model_answer
 FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-https://open.feishu.cn/open-apis/bot/v2/hook/73fdb716-16d7-4948-8e9a-3db134b5d234}
 # ==================== 配置结束 ====================
 
+export PYTHONPATH="$(pwd)${PYTHONPATH:+:${PYTHONPATH}}"
+
 notify_feishu() {
   FEISHU_WEBHOOK="$FEISHU_WEBHOOK" TEXT="$1" python3 - <<'PY' || echo "feishu notify failed"
 import json, os, urllib.request
@@ -66,7 +68,7 @@ run_mars samd_eagle3_drafter_mars_graft_t050_alwayson 0.50
 
 # 3) 汇总（第一列为原始 baseline 参照）
 echo "==== $(date '+%F %T') SUMMARY ===="
-python3 scripts/compare_speed.py \
+python3 scripts/speed.py \
   "${ANSWER_DIR}/samd_eagle3_baseline.jsonl" \
   "${ANSWER_DIR}"/samd_eagle3_baseline_rep*.jsonl \
   "${ANSWER_DIR}/samd_eagle3_drafter_mars_graft_t086.jsonl" \
