@@ -477,8 +477,9 @@ def gen_candidates(
                             tree_spec.tokens
                         )
                         if sam_nodes_added > 0:
-                            tree_attn_mask, tree_position_ids, retrieve_indices_list = (
-                                fused_tree_spec.to_buffer_lists()
+                            fused_buffers = fused_tree_spec.to_buffers(
+                                device=device,
+                                mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
                             )
                             fused_tokens = torch.tensor(
                                 fused_tree_spec.tokens,
@@ -492,21 +493,9 @@ def gen_candidates(
                                     torch.zeros(1, dtype=torch.long, device=device),
                                 ]
                             )
-                            retrieve_indices_tensor = torch.tensor(
-                                retrieve_indices_list,
-                                dtype=torch.long,
-                                device=device,
-                            )
-                            candidate_tokens = tokens_ext[retrieve_indices_tensor]
-                            fused_buffers = {
-                                "tree_attn_mask": torch.tensor(
-                                    tree_attn_mask, dtype=torch.bool, device=device
-                                ),
-                                "tree_position_ids": torch.tensor(
-                                    tree_position_ids, dtype=torch.long, device=device
-                                ),
-                                "tree_retrieve_indices": retrieve_indices_tensor,
-                            }
+                            candidate_tokens = tokens_ext[
+                                fused_buffers["tree_retrieve_indices"]
+                            ]
                     finally:
                         if profiler is not None:
                             profiler.end_section("fusion_logic", timer)
