@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point for quality review"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Project-specific testing and review requirements"}
+{"file": ".trellis/spec/backend/runtime-constraints.md", "reason": "Hard runtime constraints to verify"}
+{"file": ".trellis/spec/backend/eagle3-integration.md", "reason": "EAGLE3 integration review checklist"}
+{"file": ".trellis/spec/backend/evaluation-protocols.md", "reason": "Benchmark phase and trace review rules"}
+{"file": ".trellis/tasks/06-05-codestable-to-trellis/research/codestable-inventory.md", "reason": "Migration completeness checklist"}

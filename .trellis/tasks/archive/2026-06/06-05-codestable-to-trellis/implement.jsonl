@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point for the migrated SAM-Decoding rules"}
+{"file": ".trellis/spec/backend/project-architecture.md", "reason": "Current SAM-Decoding architecture map"}
+{"file": ".trellis/spec/backend/runtime-constraints.md", "reason": "Dependency, tokenizer, cache, and model runtime constraints"}
+{"file": ".trellis/spec/backend/eagle3-integration.md", "reason": "EAGLE3 draft-model implementation contracts"}
+{"file": ".trellis/spec/backend/tree-fusion.md", "reason": "SAM + EAGLE3 tree-fusion contracts"}
+{"file": ".trellis/spec/backend/evaluation-protocols.md", "reason": "Benchmark and V_miss trace protocols"}
+{"file": ".trellis/spec/backend/project-capabilities.md", "reason": "Capability summary migrated from CodeStable requirements"}
+{"file": ".trellis/tasks/06-05-codestable-to-trellis/research/codestable-inventory.md", "reason": "Migration source-to-destination inventory"}

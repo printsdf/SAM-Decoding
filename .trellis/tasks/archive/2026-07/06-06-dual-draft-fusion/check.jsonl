@@ -1,0 +1,10 @@
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/prd.md", "reason": "Authoritative requirements and decisions (2026-06-19) to review against."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/CONTEXT.md", "reason": "Glossary for term-consistency review."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/README.md", "reason": "Task index and handoff context."}
+{"file": ".trellis/spec/backend/tree-fusion.md", "reason": "Review fusion contract and gen_draft return-shape backward compatibility."}
+{"file": ".trellis/spec/backend/eagle3-integration.md", "reason": "Review EAGLE3 state, vocab, and budget invariants held by the drafter change."}
+{"file": ".trellis/spec/backend/evaluation-protocols.md", "reason": "Review same-trace oracle accounting and split rules."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General test and review expectations for Python research code."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify docs remain task-local; no repo-root docs created."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/archive/closed-experiments/results/2026-06-11-boundary-predictor-calibration.md", "reason": "Prior failure mode the unconstrained-fallback guard must prevent."}
+{"file": "MARS/mars/model/utils.py", "reason": "Reference ratio definition to verify Drafter-MARS faithfulness."}

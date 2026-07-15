@@ -1,7 +1,7 @@
 # Experiment Design: Drafter-MARS SAM Gate
 
-**Date**: 2026-06-11
-**Status**: Proposed; awaiting experiment planning
+**Date**: 2026-06-11 (updated 2026-06-18)
+**Status**: Ready for implementation
 **Owner**: Qixuan Fu
 
 ---
@@ -30,21 +30,16 @@ to reach rather than anywhere in the EAGLE tree.
 
 ## Baseline to Beat
 
-HumanEval q0-20 smoke from the previous boundary-predictor calibration:
-
-| Method | Held-out q10-20 MAT | Notes |
-| --- | ---: | --- |
-| EAGLE3-only | 3.9833 | Same trace, `node_budget=60` |
-| perfect oracle | 4.3449 | Same-split upper bound |
-| unconditioned low-margin trigger | 4.1406 | Trigger rate `99.89%`, diagnostic only |
-
-Full HumanEval reference from prior oracle work:
+Canonical HumanEval (164 problems, SHA256: `fc49f930...`):
 
 | Method | MAT | Gap vs EAGLE-only | Notes |
 | --- | ---: | ---: | --- |
-| EAGLE3-only | 3.6689 | +0.00% | Primary full-run baseline |
-| `sam_sequence_graft` | 3.6812 | +0.33% | Existing weak SAM method |
-| rejection-boundary oracle | 4.0231 | +9.65% | Full same-trace ceiling |
+| EAGLE3-only | 6.8180 | +0.00% | Canonical baseline (2026-06-18) |
+| `sam_sequence_graft` | 6.8288 | +0.16% | Existing weak SAM method |
+| rejection-boundary oracle | 7.0036 | +2.72% | Full same-trace ceiling |
+
+Note: An earlier oracle run (lost provenance, 2026-06-10) showed MAT 3.67 with
++9.65% gap. This cannot be reproduced and should not be used as a target.
 
 The new method must beat EAGLE3-only under the same node budget and must not
 repeat the previous always-on trigger failure.
@@ -246,9 +241,13 @@ Held-out pass criteria:
 | --- | ---: | ---: |
 | trigger rate | <= 20% | <= 15% |
 | boundary precision | >= 15% | >= 20% |
-| predicted MAT vs EAGLE | >= +2% | >= +3% |
+| predicted MAT vs EAGLE | >= +1% | >= +2% |
 | recovered oracle ceiling | >= 20% | >= 30% |
 | beats unconditioned trigger efficiency | required | required |
+
+Note: Gates lowered from original spec (was +2%/+3%) because canonical
+HumanEval ceiling is only +2.72%. If Drafter-MARS recovers ≥50% of a +2.72%
+ceiling on q0-20, that is a positive signal worth full calibration.
 
 Efficiency comparison must report:
 

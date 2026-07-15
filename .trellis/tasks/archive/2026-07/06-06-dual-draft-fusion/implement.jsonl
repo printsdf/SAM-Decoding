@@ -1,0 +1,13 @@
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/prd.md", "reason": "Authoritative requirements and decisions (2026-06-19). Supersedes any conflicting gate/file detail in the drafter-mars spec/plan."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/CONTEXT.md", "reason": "Glossary: MARS vs Drafter-MARS, oracle accounting, predictor metrics. Fixes term semantics."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/README.md", "reason": "Task index and latest handoff context."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/specs/2026-06-11-drafter-mars-sam-gate.md", "reason": "Drafter-MARS experiment design. Use for method rationale and trace schema; PRD overrides its gates and file list."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/plans/2026-06-11-drafter-mars-sam-gate.md", "reason": "Step-by-step plan. Use for trace contract shape and remote commands; PRD overrides its +2/+3 gates and missing drafter files."}
+{"file": "MARS/mars/model/utils.py", "reason": "Reference MARS implementation: ratio = top2/(top1+1e-10) on raw target logits, no sign handling, threshold grid 0.84-0.98. Drafter-MARS mirrors the ratio on drafter logits."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/archive/closed-experiments/results/2026-06-11-boundary-predictor-calibration.md", "reason": "Prior failure provenance: unconditioned low-margin + unconstrained fallback -> 99.89% trigger. The failure mode Drafter-MARS must not repeat."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/archive/implementation/phase3.1_eagle3_logprob.md", "reason": "Precedent: phase 3.1 extended topK_genrate/gen_draft to thread logprobs. The raw-logit return follows the same boundary and backward-compat pattern."}
+{"file": ".trellis/tasks/06-06-dual-draft-fusion/docs/experiments/results/2026-06-10-humaneval-oracle-results.md", "reason": "Canonical HumanEval baseline and rejection-boundary oracle ceiling (+2.72%)."}
+{"file": ".trellis/spec/backend/tree-fusion.md", "reason": "Fusion contracts and gen_draft return shapes (2/3-tuple). The return_raw_logits 4-tuple extends this; spec update is Phase 3.3."}
+{"file": ".trellis/spec/backend/eagle3-integration.md", "reason": "EAGLE3 hidden-state, vocab mapping, logprob, and budget invariants the drafter change must respect."}
+{"file": ".trellis/spec/backend/evaluation-protocols.md", "reason": "Benchmark, trace split, and same-trace oracle comparison rules."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Task-local docs convention; no repo-root docs. CONTEXT.md lives task-local."}

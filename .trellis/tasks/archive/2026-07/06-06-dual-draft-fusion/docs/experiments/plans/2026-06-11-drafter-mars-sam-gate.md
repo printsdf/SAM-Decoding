@@ -1,19 +1,17 @@
 # Drafter-MARS SAM Gate Experiment Plan
 
 **Goal:** Test whether MARS-style adaptive margins from EAGLE3 drafter raw
-logits can gate SAM repair before target verification without the always-on
-failure of unconditioned sibling-margin triggering.
+logits can gate SAM repair before target verification without always-on
+triggering.
 
-**Baseline:** HumanEval q0-20 boundary-predictor smoke with same-trace
-EAGLE-only held-out MAT `3.9833`, perfect held-out MAT `4.3449`, and the failed
-unconditioned low-margin trigger MAT `4.1406` at `99.89%` trigger rate.
+**Baseline (2026-06-18):** Canonical HumanEval 164 questions (SHA256:
+`fc49f930...`). EAGLE MAT 6.82, oracle ceiling +2.72%.
 
 **Primary Metric:** Held-out q10-20 predicted-boundary oracle MAT after
 selecting `theta` only on q0-10, subject to smoke trigger rate `<= 20%`.
 
 **Budget:** One q0-20 smoke trace rerun if raw drafter logits are not already
-available, plus CPU-only analyzer sweeps. Full q0-164 is allowed only after the
-smoke pass gate.
+available, plus CPU-only analyzer sweeps. Full q0-164 only after smoke pass.
 
 ---
 
