@@ -8,7 +8,7 @@ from samd.tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
 
 
 TREES = [
-    [-1],
+    [-1, 0],
     [-1, 0, 0, 1, 1, 3],
     [-1, 0, 0, 2, 2, 4, 4, 6],
 ]
@@ -16,6 +16,9 @@ TREES = [
 
 @pytest.mark.parametrize("parents", TREES)
 def test_parents_match_from_eagle3_buffers(parents):
+    # n==1 (root-only) is excluded: _squeeze_singletons collapses a 1x1 mask,
+    # so from_eagle3_buffers itself cannot round-trip it; real EAGLE trees
+    # always have >= 2 nodes.
     tokens = list(range(100, 100 + len(parents)))
     spec = TreeSpec(tokens=tokens, parents=parents)
     buffers = spec.to_buffers()
