@@ -246,9 +246,8 @@ class Eagle3Model(nn.Module):
         """Gather each parent's top-2 raw logits, broadcast to its top_k children.
 
         ``headout`` is ``(num_parents, draft_vocab_size)``. Returns shape
-        ``(1, num_parents * top_k, 2)`` so it concatenates alongside
-        ``logprobs_list`` (which is ``(1, num_parents, top_k)`` per layer and
-        later flattened to ``num_parents * top_k``).
+        ``(num_parents * top_k, 2)`` so entries concatenate along dim 0 in the
+        same parent-major order as the flattened ``logprobs_list``.
         """
         k = min(2, int(headout.shape[-1]))
         top2_values, _ = torch.topk(headout, k, dim=-1)
@@ -258,7 +257,7 @@ class Eagle3Model(nn.Module):
         # Broadcast each parent's (z1, z2) across its top_k children so the
         # downstream ``top_scores_index`` reselection aligns with logprobs_list.
         top_k = int(topk_index.shape[-1])
-        broadcast = top2_values.unsqueeze(1).expand(-1, top_k, -1).reshape(1, -1, 2)
+        broadcast = top2_values.unsqueeze(1).expand(-1, top_k, -1).reshape(-1, 2)
         return broadcast
 
     @torch.no_grad()
