@@ -624,9 +624,11 @@ class SamdModel(nn.Module):
                 break
         input_ids_list = [input_ids_list[:input_length + generation_config.max_new_tokens]]
         fusion_summary = self.draft.fusion_summary()
+        profiler = getattr(generation_config, "fusion_profiler", None)
+        profiling = profiler is not None and getattr(profiler, "enabled", False)
         if self.samd_config.fusion_mode == "naive":
             self._print_fusion_analysis()
-        elif fusion_summary is not None and fusion_summary["steps"] > 0:
+        elif profiling and fusion_summary is not None and fusion_summary["steps"] > 0:
             print(
                 "{}_stats:".format(fusion_summary.get("mode", "tree_fusion")),
                 json.dumps(fusion_summary, sort_keys=True),
