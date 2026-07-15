@@ -39,9 +39,12 @@ def eagle3_parents_from_buffers(
     if n == 0:
         raise ValueError("TreeSpec must contain at least the root token")
     mask = torch.as_tensor(tree_attn_mask).reshape(n, n).bool()
+    # eagle3 keeps the tree mask on CPU while position ids live on the GPU;
+    # compute on the mask's device (pos is a tiny transfer).
+    pos = pos.to(mask.device)
     if bool((pos[1:] <= 0).any()):
         raise ValueError("non-root tree node must have positive position id")
-    idx = torch.arange(n, device=pos.device)
+    idx = torch.arange(n, device=mask.device)
     candidates = (
         mask
         & (pos.unsqueeze(0) == pos.unsqueeze(1) - 1)
