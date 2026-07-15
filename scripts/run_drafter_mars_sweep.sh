@@ -11,8 +11,8 @@ set -u
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
 # ==================== 配置 ====================
-MODEL_PATH=${MODEL_PATH:-/root/aicloud-data/Models/Meta-Llama-3.1-8B-Instruct}
-TREE_MODEL_PATH=${TREE_MODEL_PATH:-/root/aicloud-data/Models/EAGLE3-LLaMA3.1-Instruct-8B}
+MODEL_PATH=${MODEL_PATH:-/root/autodl-tmp/models/Llama-3.1-8B-Instruct}
+TREE_MODEL_PATH=${TREE_MODEL_PATH:-/root/autodl-tmp/models/EAGLE3-LLaMA3.1-Instruct-8B}
 THETAS=${THETAS:-"0.88 0.94 0.98"}   # 0.90 已有结果，不重跑
 PROFILE_THETA=${PROFILE_THETA:-0.90}
 QUESTION_BEGIN=${QUESTION_BEGIN:-0}
@@ -20,7 +20,20 @@ QUESTION_END=${QUESTION_END:-164}
 SHUTDOWN=${SHUTDOWN:-1}
 ANSWER_DIR=evaluation/data/humaneval/model_answer
 BASELINE_ID=${BASELINE_ID:-samd_eagle3_baseline}
+FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-https://open.feishu.cn/open-apis/bot/v2/hook/73fdb716-16d7-4948-8e9a-3db134b5d234}
 # ==================== 配置结束 ====================
+
+notify_feishu() {
+  FEISHU_WEBHOOK="$FEISHU_WEBHOOK" TEXT="$1" python3 - <<'PY' || echo "feishu notify failed"
+import json, os, urllib.request
+req = urllib.request.Request(
+    os.environ["FEISHU_WEBHOOK"],
+    data=json.dumps({"msg_type": "text", "content": {"text": os.environ["TEXT"]}}).encode(),
+    headers={"Content-Type": "application/json"},
+)
+print("feishu:", urllib.request.urlopen(req, timeout=10).read().decode())
+PY
+}
 
 COMMON_ARGS=(
   --model-type llama3 --template llama3
@@ -58,11 +71,18 @@ for f in "${ANSWER_DIR}"/samd_eagle3_drafter_mars_graft_t*.jsonl; do
   [[ "$f" == *_profile.jsonl ]] && continue
   FILES="$FILES $f"
 done
-python3 scripts/compare_speed.py $FILES | tee "${ANSWER_DIR}/sweep_summary.txt"
+python3 scripts/speed.py $FILES | tee "${ANSWER_DIR}/sweep_summary.txt"
 echo "profile 输出: ${ANSWER_DIR}/samd_eagle3_drafter_mars_graft_t${PROFILE_THETA//./}_profile.jsonl.fusion_profile.txt"
 [ -n "$FAILED" ] && echo "FAILED runs:${FAILED}"
 
-# 4) 关机
+# 4) 飞书提醒
+notify_feishu "Drafter-MARS sweep 完成 $(date '+%F %T')
+host: $(hostname)
+FAILED:${FAILED:-" 无"}
+
+$(head -20 "${ANSWER_DIR}/sweep_summary.txt" 2>/dev/null || echo "sweep_summary.txt 缺失")"
+
+# 5) 关机
 if [ "$SHUTDOWN" = "1" ]; then
   echo "$(date '+%F %T') 全部结束，正在关机..."
   /usr/bin/shutdown -h now
