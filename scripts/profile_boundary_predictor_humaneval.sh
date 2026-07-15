@@ -86,13 +86,13 @@ require_file() {
     fi
 }
 
-require_file evaluation/oracle_fusion_analysis.py
-require_file evaluation/oracle_rejection_boundary.py
+require_file evaluation/oracle/cli.py
+require_file evaluation/oracle/rejection_boundary.py
 if [ "${RUN_BOUNDARY_ANALYZER}" != "0" ]; then
-    require_file evaluation/analyze_boundary_predictor.py
+    require_file evaluation/boundary/cli.py
 fi
-if [ ! -f evaluation/oracle_depth_decoupled.py ]; then
-    echo "WARNING: optional depth-decoupled oracle missing; oracle_fusion_analysis.py will skip that payload if requested." >&2
+if [ ! -f evaluation/oracle/depth_decoupled.py ]; then
+    echo "WARNING: optional depth-decoupled oracle missing; evaluation.oracle.cli will skip that payload if requested." >&2
 fi
 if [ "${missing_required}" != "0" ]; then
     echo "ERROR: preflight failed before model execution; sync or track the missing analysis files first." >&2
@@ -210,20 +210,20 @@ fi
 "${cmd[@]}" "$@"
 
 echo "Running oracle analysis"
-"${PYTHON_BIN}" evaluation/oracle_fusion_analysis.py \
+"${PYTHON_BIN}" -m evaluation.oracle.cli \
     --trace-file "${PROFILE_JSON}" \
     --output-json "${ORACLE_RESULTS}"
 
 echo "Running rejection-boundary oracle analysis"
-"${PYTHON_BIN}" evaluation/oracle_rejection_boundary.py \
+"${PYTHON_BIN}" -m evaluation.oracle.rejection_boundary \
     --trace-file "${PROFILE_JSON}" \
     --output "${REJECTION_BOUNDARY_RESULTS}"
 
 if [ "${RUN_BOUNDARY_ANALYZER}" != "0" ]; then
     echo "Running boundary predictor calibration analyzer"
-    analyzer_help=$("${PYTHON_BIN}" evaluation/analyze_boundary_predictor.py --help 2>&1 || true)
+    analyzer_help=$("${PYTHON_BIN}" -m evaluation.boundary.cli --help 2>&1 || true)
     analyzer_cmd=(
-        "${PYTHON_BIN}" evaluation/analyze_boundary_predictor.py
+        "${PYTHON_BIN}" -m evaluation.boundary.cli
         --trace-file "${PROFILE_JSON}"
         --answer-file "${ANSWER_FILE}"
         --train-begin "${TRAIN_BEGIN}"
