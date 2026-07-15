@@ -21,6 +21,39 @@ def _squeeze_singletons(value: Any) -> Any:
     return value
 
 
+def eagle3_parents_from_buffers(
+    tree_attn_mask: Any,
+    tree_position_ids: Any,
+) -> List[int]:
+    """Torch equivalent of ``TreeSpec.from_eagle3_buffers`` parent derivation.
+
+    Avoids the O(n^2) Python mask parse on the per-step hot path; the only
+    device-to-host transfer is the final parent list. Selection rule matches
+    ``from_eagle3_buffers`` exactly: parent of node i is the LARGEST j < i
+    with mask[i, j] set and position[j] == position[i] - 1.
+    """
+    import torch
+
+    pos = torch.as_tensor(tree_position_ids).reshape(-1).long()
+    n = int(pos.numel())
+    if n == 0:
+        raise ValueError("TreeSpec must contain at least the root token")
+    mask = torch.as_tensor(tree_attn_mask).reshape(n, n).bool()
+    if bool((pos[1:] <= 0).any()):
+        raise ValueError("non-root tree node must have positive position id")
+    idx = torch.arange(n, device=pos.device)
+    candidates = (
+        mask
+        & (pos.unsqueeze(0) == pos.unsqueeze(1) - 1)
+        & (idx.unsqueeze(0) < idx.unsqueeze(1))
+    )
+    parents = (candidates.long() * (idx + 1).unsqueeze(0)).amax(dim=1) - 1
+    parents[0] = -1
+    if bool((parents[1:] < 0).any()):
+        raise ValueError("could not infer parent for tree node")
+    return parents.tolist()
+
+
 @dataclass
 class TreeSpec:
     tokens: List[int]

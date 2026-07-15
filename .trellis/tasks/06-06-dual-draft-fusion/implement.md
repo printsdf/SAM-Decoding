@@ -4,6 +4,12 @@ Depends on: `design.md` (A + three packages)
 
 ## Checklist
 
+### Phase S4 — Hot-path tensorization (session 2026-07-15, outputs must stay bit-identical)
+
+- [x] S4.1 `eagle3_parents_from_buffers` torch helper (replaces per-step O(n^2) Python mask parse); drafter_mars gate runs on the parents list, TreeSpec built only on triggered graft steps.
+- [x] S4.2 Raw-pair capture gathers `headout` at the existing log-softmax topk indices instead of a fresh vocab-wide topk per depth.
+- [x] S4.3 Torch-gated equivalence tests `tests/test_eagle3_parents.py` (parents vs `from_eagle3_buffers`; gather vs vocab topk). Server acceptance: rerun t086 → MAT must equal 7.7849 exactly.
+
 ### Phase S3 — Graft repair for drafter_mars (session 2026-07-14, user-approved)
 
 - [x] S3.1 Gate: return earliest triggering top-path parent (node index + depth + ratio); keep bool/max-ratio compat.

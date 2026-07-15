@@ -305,7 +305,7 @@ def gen_candidates(
 
     if samd_config.fusion_mode == "drafter_mars":
         from .fusion.drafter_mars_gate import top_path_ratio_trigger
-        from .tree_model.fusion import TreeSpec
+        from .tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
 
         theta = samd_config.drafter_mars_theta
         timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
@@ -370,13 +370,12 @@ def gen_candidates(
 
         timer = profiler.start_section("fusion_logic") if profiler is not None else 0.0
         try:
-            tree_spec = TreeSpec.from_eagle3_buffers(
-                eagle_tokens,
+            eagle_parents = eagle3_parents_from_buffers(
                 eagle_buffers["tree_attn_mask"],
                 eagle_buffers["tree_position_ids"],
             )
             ratio_triggered, max_top_path_ratio = top_path_ratio_trigger(
-                tree_spec.parents,
+                eagle_parents,
                 eagle_logprobs,
                 eagle_raw_logits,
                 theta,
@@ -396,7 +395,7 @@ def gen_candidates(
             from .fusion.drafter_mars_gate import earliest_top_path_trigger
 
             trigger = earliest_top_path_trigger(
-                tree_spec.parents,
+                eagle_parents,
                 eagle_logprobs,
                 eagle_raw_logits,
                 theta,
@@ -410,9 +409,9 @@ def gen_candidates(
                 node = trigger.parent_index
                 while node != -1:
                     chain.append(node)
-                    node = tree_spec.parents[node]
+                    node = eagle_parents[node]
                 chain.reverse()
-                prefix_tokens = [int(tree_spec.tokens[i]) for i in chain]
+                prefix_tokens = [int(eagle_tokens[i]) for i in chain]
                 sam_start_token = prefix_tokens[-1]
 
                 timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
@@ -467,6 +466,10 @@ def gen_candidates(
                         # sam_candidates[0] is sam_start_token (the triggering
                         # parent's token, already in the tree); graft only the
                         # continuation at that parent.
+                        tree_spec = TreeSpec(
+                            tokens=[int(token) for token in eagle_tokens],
+                            parents=list(eagle_parents),
+                        )
                         fused_tree_spec = graft_sam_at_depth(
                             eagle_tree=tree_spec,
                             sam_candidates=sam_candidates[1:],
