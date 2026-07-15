@@ -12,6 +12,7 @@ _spec.loader.exec_module(_gate)
 
 greedy_top_path_parents = _gate.greedy_top_path_parents
 top_path_ratio_trigger = _gate.top_path_ratio_trigger
+earliest_top_path_trigger = _gate.earliest_top_path_trigger
 
 # Tree: root 0 -> {1, 2}; 1 -> 3 (greedy path: 0 -> 1 -> 3)
 PARENTS = [-1, 0, 0, 1]
@@ -63,6 +64,44 @@ def test_missing_raw_pairs_never_trigger():
     assert top_path_ratio_trigger(PARENTS, LOGPROBS, [(1.0, 0.5)], 0.90) == (False, None)
 
 
+def test_earliest_trigger_returns_shallowest_parent():
+    # Both top-path parents trigger (root pair at node 1, node-1 pair at node 3);
+    # the earliest is the root (depth 0), read at greedy child 1.
+    raw_pairs = [(None, None), (10.0, 9.5), (10.0, 9.5), (10.0, 9.9)]
+    trigger = earliest_top_path_trigger(PARENTS, LOGPROBS, raw_pairs, 0.90)
+    assert trigger is not None
+    assert trigger.parent_index == 0
+    assert trigger.parent_depth == 0
+    assert trigger.child_index == 1
+    assert abs(trigger.ratio - 0.95) < 1e-6
+
+
+def test_earliest_trigger_deeper_parent_only():
+    # Only node 1 (pair stored at its greedy child 3) triggers.
+    raw_pairs = [(None, None), (10.0, 5.0), (10.0, 5.0), (10.0, 9.5)]
+    trigger = earliest_top_path_trigger(PARENTS, LOGPROBS, raw_pairs, 0.90)
+    assert trigger is not None
+    assert trigger.parent_index == 1
+    assert trigger.parent_depth == 1
+    assert trigger.child_index == 3
+    assert abs(trigger.ratio - 0.95) < 1e-6
+
+
+def test_earliest_trigger_none_when_no_trigger():
+    raw_pairs = [(None, None), (10.0, 5.0), (10.0, 5.0), (10.0, 5.0)]
+    assert earliest_top_path_trigger(PARENTS, LOGPROBS, raw_pairs, 0.90) is None
+    assert earliest_top_path_trigger(PARENTS, LOGPROBS, None, 0.90) is None
+    assert earliest_top_path_trigger(PARENTS, LOGPROBS, [(1.0, 0.99)], 0.90) is None
+
+
+def test_earliest_trigger_ignores_off_path_parent():
+    # Node 4's pair belongs to off-path parent 2; greedy path is 0 -> 1 -> 3.
+    parents = [-1, 0, 0, 1, 2]
+    logprobs = [0.0, -0.1, -2.0, -0.3, -0.5]
+    raw_pairs = [(None, None), (10.0, 5.0), (10.0, 5.0), (10.0, 5.0), (10.0, 9.9)]
+    assert earliest_top_path_trigger(parents, logprobs, raw_pairs, 0.90) is None
+
+
 # SamdConfig imports torch; run these only where torch is available (server).
 try:
     import torch  # noqa: F401
@@ -102,6 +141,19 @@ def test_config_theta_validation():
         _config(tree_method="eagle3", fusion_mode="drafter_mars", drafter_mars_theta=-1.0)
     with pytest.raises(ValueError):
         _config(tree_method="eagle3", fusion_mode="drafter_mars", drafter_mars_variant="reachable")
+
+
+@requires_torch
+def test_config_drafter_mars_repair():
+    assert _config(tree_method="eagle3", fusion_mode="drafter_mars").drafter_mars_repair == "graft"
+    config = _config(
+        tree_method="eagle3", fusion_mode="drafter_mars", drafter_mars_repair="naive_fuse"
+    )
+    assert config.drafter_mars_repair == "naive_fuse"
+    with pytest.raises(ValueError):
+        _config(tree_method="eagle3", fusion_mode="drafter_mars", drafter_mars_repair="fuse")
+    with pytest.raises(ValueError):
+        _config(tree_method="eagle3", fusion_mode="drafter_mars", drafter_mars_repair="")
 
 
 @requires_torch

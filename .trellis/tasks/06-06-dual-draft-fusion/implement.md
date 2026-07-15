@@ -4,6 +4,15 @@ Depends on: `design.md` (A + three packages)
 
 ## Checklist
 
+### Phase S3 — Graft repair for drafter_mars (session 2026-07-14, user-approved)
+
+- [x] S3.1 Gate: return earliest triggering top-path parent (node index + depth + ratio); keep bool/max-ratio compat.
+- [x] S3.2 `SamdConfig`: `drafter_mars_repair` Literal["graft","naive_fuse"] default "graft" + validation; CLI `--drafter_mars_repair`.
+- [x] S3.3 `samd/utils.py`: triggered branch → graft path (prefix transfer_state → SAM continuation → `graft_sam_at_depth` at triggering parent, budget `boundary_graft_max_sam_nodes`); `naive_fuse` keeps old behavior.
+- [x] S3.4 Metadata/stats: record repair kind, trigger depth/ratio, sam nodes added.
+- [x] S3.5 Tests: earliest-parent selection; repair-mode config validation; existing gate tests still pass.
+- [x] S3.6 py_compile + torch-free pytest; update eval commands note.
+
 ### Phase S2 — Online `fusion_mode="drafter_mars"` (session 2026-07-14)
 
 - [x] S2.1 `SamdConfig`: add `"drafter_mars"` to `fusion_mode` literal + validation; add `drafter_mars_theta` (default 0.90), `drafter_mars_variant` ("top_path"); map `fusion_config` like `rejection_boundary`.

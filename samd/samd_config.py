@@ -43,6 +43,7 @@ class SamdConfig:
     boundary_graft_max_depth: int = field(default=8)  # Max depth for prediction
     drafter_mars_theta: float = field(default=0.90)
     drafter_mars_variant: Literal["top_path"] = field(default="top_path")
+    drafter_mars_repair: Literal["graft", "naive_fuse"] = field(default="graft")
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -84,6 +85,10 @@ class SamdConfig:
         if self.drafter_mars_variant != "top_path":
             raise ValueError(
                 "unsupported drafter_mars_variant: {}".format(self.drafter_mars_variant)
+            )
+        if self.drafter_mars_repair not in ("graft", "naive_fuse"):
+            raise ValueError(
+                "unsupported drafter_mars_repair: {}".format(self.drafter_mars_repair)
             )
         if self.fusion_mode != "none" and self.tree_method != "eagle3":
             raise ValueError(

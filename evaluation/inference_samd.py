@@ -175,6 +175,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--rejection_conf_threshold", type=float, default=0.5)
     parser.add_argument("--drafter_mars_theta", type=float, default=0.90)
+    parser.add_argument(
+        "--drafter_mars_repair",
+        type=str,
+        default="graft",
+        choices=["graft", "naive_fuse"],
+    )
     parser.add_argument("--boundary_graft_threshold", type=float, default=1.5)
     parser.add_argument("--boundary_graft_max_sam_nodes", type=int, default=8)
     parser.add_argument("--boundary_graft_min_depth", type=int, default=3)
@@ -239,6 +245,7 @@ if __name__ == "__main__":
     print("tree_fusion:", args.tree_fusion)
     print("fusion_mode:", args.fusion_mode)
     print("drafter_mars_theta:", args.drafter_mars_theta)
+    print("drafter_mars_repair:", args.drafter_mars_repair)
     print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
     print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
     print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
@@ -311,6 +318,7 @@ if __name__ == "__main__":
         fusion_truncate_strategy=args.fusion_truncate_strategy,
         rejection_conf_threshold=args.rejection_conf_threshold,
         drafter_mars_theta=args.drafter_mars_theta,
+        drafter_mars_repair=args.drafter_mars_repair,
         boundary_graft_threshold=args.boundary_graft_threshold,
         boundary_graft_max_sam_nodes=args.boundary_graft_max_sam_nodes,
         boundary_graft_min_depth=args.boundary_graft_min_depth,

@@ -60,6 +60,29 @@ possibly computed on shifted ratios). Not fixed in this session (would
 invalidate Stage-1 numbers); needs a user decision + recalibration if
 confirmed.
 
+## Revision (2026-07-14, user decision): graft repair replaces naive fuse
+
+User observation: naive fusion underperforms graft; the MARS signal localizes
+the uncertain parent, so repair must happen AT that node. Revised trigger
+action:
+
+1. Gate unchanged (greedy top-path parents, ratio `> theta`, match-length gate
+   first), but it now selects the **earliest** (shallowest, tie → lowest tree
+   index) triggering parent, matching offline `predict_draft_mars_top_path`.
+2. Repair reuses the `boundary_graft` machinery
+   (`samd/fusion/boundary_graft.py`): extract the EAGLE top-path prefix up to
+   the triggering parent, `transfer_state` it into SAM so the continuation is
+   conditioned on the drafted prefix, then `graft_sam_at_depth` at that parent
+   (budget `boundary_graft_max_sam_nodes`, default 8). EAGLE tree preserved,
+   no truncation.
+3. `drafter_mars_repair: Literal["graft", "naive_fuse"] = "graft"` keeps the
+   old root-anchored fuse as an ablation arm under the same gate; CLI
+   `--drafter_mars_repair`.
+
+Rationale: signal-action alignment (repair at the located boundary), zero
+EAGLE truncation cost, and consistency with the Stage-1 oracle ceiling which
+is graft-semantics (`rejection_boundary` oracle).
+
 ## Eval commands (HumanEval full 0–164, profile off)
 
 Baseline:
@@ -70,8 +93,9 @@ python3 evaluation/inference_samd.py --model-type llama3 --template llama3 \
   --tree_method eagle3 --fusion_mode none --tree_fusion none \
   --samd_len_threshold 5 --samd_len_bias 5
 ```
-Drafter-MARS: same command with `--fusion_mode drafter_mars --drafter_mars_theta 0.90`
-and `--model-id samd_eagle3_drafter_mars_t090`. Compare MAT (accept length per
+Drafter-MARS: same command with `--fusion_mode drafter_mars --drafter_mars_theta 0.90 --drafter_mars_repair graft`
+and `--model-id samd_eagle3_drafter_mars_t090`. Use `--drafter_mars_repair naive_fuse`
+for the root-anchored fuse ablation arm. Compare MAT (accept length per
 step) and tokens/s from the run summary.
 
 ---

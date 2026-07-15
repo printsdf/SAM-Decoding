@@ -1,8 +1,17 @@
 """Pure Drafter-MARS gate functions (no model dependency)."""
 
-from typing import List, Optional, Sequence, Tuple
+from typing import List, NamedTuple, Optional, Sequence, Tuple
 
 RATIO_EPS = 1e-10
+
+
+class TriggerInfo(NamedTuple):
+    """Earliest triggering top-path parent."""
+
+    parent_index: int
+    parent_depth: int
+    child_index: int
+    ratio: float
 
 
 def greedy_top_path(
@@ -61,3 +70,39 @@ def top_path_ratio_trigger(
     if max_ratio is None:
         return False, None
     return max_ratio > theta, max_ratio
+
+
+def earliest_top_path_trigger(
+    parents: Sequence[int],
+    logprobs: Optional[Sequence[float]],
+    raw_pairs: Optional[Sequence[Optional[Tuple[Optional[float], Optional[float]]]]],
+    theta: float,
+) -> Optional[TriggerInfo]:
+    """Earliest (shallowest; tie-break lowest tree index) triggering top-path parent.
+
+    ``raw_pairs[i]`` carries the (z1, z2) of the parent expansion that produced
+    node ``i`` (root carries ``(None, None)``), so a parent's ratio is read at
+    its greedy child. The greedy top path has one parent per depth, so the
+    first trigger along the descent is the earliest; the tie-break is defensive.
+    """
+    if raw_pairs is None or len(raw_pairs) != len(parents):
+        return None
+    best: Optional[TriggerInfo] = None
+    for depth, child_index in enumerate(greedy_top_path(parents, logprobs)[1:]):
+        pair = raw_pairs[child_index]
+        if pair is None:
+            continue
+        z1, z2 = pair
+        if z1 is None or z2 is None:
+            continue
+        ratio = float(z2) / (float(z1) + RATIO_EPS)
+        if ratio <= theta:
+            continue
+        parent_index = parents[child_index]
+        candidate = TriggerInfo(parent_index, depth, child_index, ratio)
+        if best is None or (candidate.parent_depth, candidate.parent_index) < (
+            best.parent_depth,
+            best.parent_index,
+        ):
+            best = candidate
+    return best
