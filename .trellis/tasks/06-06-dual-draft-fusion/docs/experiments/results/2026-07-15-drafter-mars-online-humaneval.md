@@ -64,6 +64,26 @@ steps.
    (~1-2% expected) and graft budget tuning; verify growth is productive
    cost.
 
+## Hot-path tensorization + graft budget sweep (same-boot batch, commit fbd338c)
+
+Tensorization (torch parents derivation, topk-index reuse for raw pairs)
+verified bit-identical: t086_opt MAT = 7.7849 exactly. Same-boot baseline
+213.91 tok/s (cross-boot drift vs the previous batch's 214.82 confirms
+same-batch controls are required).
+
+| arm (theta=0.86) | MAT | MAT+% | tok/s | speedup |
+| --- | ---: | ---: | ---: | ---: |
+| baseline_opt | 7.4849 | +0.00 | 213.91 | 1.0000 |
+| budget 4 | 7.5738 | +1.19 | 215.47 | 1.0073 |
+| budget 6 | 7.6966 | +2.83 | 217.72 | 1.0178 |
+| **budget 8 (default)** | **7.7849** | **+4.01** | **219.50** | **1.0261** |
+| budget 12 | 7.8051 | +4.28 | 218.18 | 1.0199 |
+
+Tensorization roughly doubled the net speedup at the operating point
+(1.0115 → 1.0261). Budget 8 is the throughput optimum; budget 12 is the MAT
+optimum (+4.28%) with speedup still positive. Headline operating point:
+**theta=0.86, budget=8 → MAT +4.01%, throughput +2.61%** over SAM[EAGLE3].
+
 ## Open items
 
 - Budget sweep `boundary_graft_max_sam_nodes in {4,6,8,12}` at theta=0.86.
