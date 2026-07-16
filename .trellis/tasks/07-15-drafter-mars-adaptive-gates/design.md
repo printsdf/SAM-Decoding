@@ -77,36 +77,80 @@ Config: `drafter_mars_budget_mode: Literal["fixed","depth","ratio"] = "fixed"`.
 A1 changes only theta input; A2 only budget input; A3 only the repair loop.
 They compose freely; eval arms test each alone plus the full trio.
 
-## Phase B — learned gate head (sketch; refine before B starts)
+## Phase B — learned multi-task decision head (revised 2026-07-15 after A8)
 
-- **Features** per top-path parent: ratio, depth, local_logprob(top1/top2),
-  logprob delta, cumulative/normalized path logprob, sam_match hint
-  (best_match at step start); optional drafter hidden state of the parent
-  node (eagle3 `out_hidden`, capture behind a flag — heavy, off by default).
-- **Labels**: from the verifier — greedy top path vs accepted path; the
-  shallowest top-path parent at or below which the verifier diverged is the
-  positive boundary; parents strictly above it are negatives.
-- **Capture**: `--gate-head-capture <path>` on inference_samd; writes JSONL
-  (one record per step: features per parent + accept path). Reuses the
-  existing profiler step-metadata plumbing where possible.
-- **Trainer**: `evaluation/gate_head/train.py` — standardize features, MLP
-  (2×64, ReLU, BCE), split by question id, report AUC vs the ratio-threshold
-  baseline on the same split; save TorchScript-able checkpoint + feature
-  spec JSON.
-- **Online**: `drafter_mars_gate_kind: Literal["ratio","learned"] = "ratio"`,
-  `drafter_mars_gate_head_path: Optional[str]`. `samd/fusion/gate_head.py`
-  loads the checkpoint once, scores top-path parents in one small matmul,
-  triggers when p > tau (`drafter_mars_gate_tau: float = 0.5`); missing
-  checkpoint → hard error (no silent fallback), ratio gate stays the
-  explicit baseline arm.
+Positioning (user decision): the learned head is the METHOD; MARS ratio is
+the zero-shot baseline; ACI-framed adaptive theta is the training-free
+calibration baseline; fixed theta is the ablation. Phase A data justifies
+this: hand-crafted budget schedules LOST MAT (depth -1.99%, ratio -2.32%)
+while more/multi repair won (K=2 +0.67%, b12 +0.27% over b8) — where and how
+much to repair should be predicted from data, not ruled.
+
+### Head
+
+One shared MLP trunk (features → 2×64 ReLU) with two outputs per top-path
+parent:
+
+1. `p_trigger` — probability the verifier rejects at this parent (BCE).
+2. `budget` — how many SAM nodes to graft here, 4-class over {0, 4, 8, 12}
+   (class CE; 0 = not worth grafting even if triggered — subsumes precision).
+
+Online selection: score all top-path parents in one batched forward, take
+top-K by `p_trigger` above tau (K = `drafter_mars_max_grafts`, reuse Phase A
+multi-graft machinery + `drafter_mars_total_graft_nodes` cap), per-graft
+budget = head's class. tau calibrated on val split; optionally ACI-adjusted
+online (combines Phase A controller with the learned score — principled and
+mainstream).
+
+### Features (per top-path parent; all available online, no extra capture cost)
+
+ratio, z1, z2, greedy-child local_logprob, sibling logprob delta, parent
+depth (/ eagle3_depth), cumulative path logprob, normalized path logprob,
+step best_match (match-length gate residual), children count of parent.
+Optional (off by default): parent-node drafter hidden state (eagle3
+`out_hidden`, projected 4096→64 inside the head) — only if feature-only AUC
+is unsatisfying.
+
+### Labels (two capture streams)
+
+- **Trigger stream** (from a plain drafter_mars run with capture on): per
+  step where the EAGLE draft was used, compare greedy top path with the
+  verifier-accepted path. Parents strictly above the divergence depth →
+  label 0; the parent AT the divergence → label 1; parents below → masked
+  (verifier never saw them).
+- **Budget stream** (from a K=2/b12 drafter_mars run with capture on): per
+  executed graft, count how many of its grafted nodes the verifier accepted
+  (accepted candidate row ∩ graft node range) → budget class label at that
+  parent's features. This is direct supervision for "how much repair pays".
+
+### Capture / training / serving
+
+- `--gate-head-capture <path>`: JSONL, one record per step — features per
+  top-path parent, accepted path, graft node ranges + accepted counts when
+  grafts happened. Implemented inside the drafter_mars branch (guarded, zero
+  cost when off).
+- `evaluation/gate_head/dataset.py`: streams → (X, y_trigger, y_budget,
+  masks); split by question id (train 0-99 / val 100-131 / test 132-164).
+- `evaluation/gate_head/train.py`: standardize, multi-task loss
+  (BCE + CE, equal weight to start), report trigger AUC + budget accuracy
+  vs the ratio-threshold baseline on the same split; save state_dict +
+  feature-spec/normalization JSON.
+- `samd/fusion/gate_head.py`: lazy torch module, loads checkpoint once,
+  batched forward per step. Config: `drafter_mars_gate_kind:
+  Literal["ratio","learned"] = "ratio"`, `drafter_mars_gate_head_path`,
+  `drafter_mars_gate_tau: float = 0.5`. Missing checkpoint with
+  gate_kind="learned" → hard error (no silent fallback).
 
 ## Eval plan (server batches, same pattern as 06-06)
 
-- Batch A: fixed t086/b8 reference + adaptive-theta arm (target 0.75) +
-  budget-mode arms (depth, ratio) + multi-graft arms (K=2, K=3) + full trio.
-  Plus default-off equivalence check (MAT 7.7849).
-- Batch B: capture run (0-99 train / 100-164 held-out), train, AUC report,
-  online learned-gate arm vs ratio arm.
+- Batch A (DONE 2026-07-15): ref equivalence OK (MAT 7.7849). K=2 → MAT
+  7.8372 (+4.71% vs SAM[EAGLE3] baseline) at equal tok/s — new operating
+  point. K=3 marginal. Budget schedules depth/ratio and trio hurt (rule
+  schedules falsified). Adaptive theta in-domain -0.35% (cross-domain arm
+  deferred).
+- Batch B: capture runs (trigger stream + budget stream) → train → held-out
+  AUC/accuracy report → online arms: ratio-K2 (reference) vs learned-K2 vs
+  learned-K2-with-learned-budget. MAT + tok/s + trigger rate each.
 
 ## Risks
 
@@ -115,4 +159,6 @@ They compose freely; eval arms test each alone plus the full trio.
 | Adaptive theta oscillates / collapses to clip bound | small eta, clip range, per-step metadata to diagnose; target-rate arm compared against fixed arm |
 | Multi-graft inflates verify cost faster than MAT | global node cap + per-graft budgets; K sweep |
 | Hidden-state capture too slow/large | optional flag; feature-only head is the default path |
-| Label noise (divergence ≠ drafter fault) | boundary-parent labeling only on steps where EAGLE draft was used; report AUC before any online claim |
+| Label noise (divergence ≠ drafter fault) | boundary-parent labeling only on steps where EAGLE draft was used; masked below-divergence parents; report AUC before any online claim |
+| Budget labels only exist at triggered sites (selection bias) | budget stream from the dense K=2 run (75%+ trigger rate) covers most steps; report label coverage |
+| Head overfits HumanEval | question-id split now; cross-domain training data is the follow-up task |

@@ -32,22 +32,31 @@ server before Phase B starts (user decision 2026-07-15).
       `scripts/run_drafter_mars_adaptive_batch.sh` (reference arm, adaptive
       arm, budget arms, K arms, trio arm, default-off equivalence assert,
       speed.py summary, Feishu + shutdown).
-- [ ] A8 Server run + record results in task docs.
+- [x] A8 Server run + record results in task docs (batch 2026-07-15: K=2 new
+      operating point, budget schedules falsified; see results note).
 
-### Phase B — learned gate head (start after A8 readout)
+### Phase B — learned multi-task decision head (start after A8 readout)
 
-- [ ] B1 Capture: `--gate-head-capture` flag → per-step JSONL (features per
-      top-path parent + acceptance path); no overhead when off.
-- [ ] B2 `evaluation/gate_head/dataset.py`: JSONL → labeled matrix
-      (boundary-parent labeling per design), question-id split.
-- [ ] B3 `evaluation/gate_head/train.py`: MLP train/eval, AUC vs ratio
-      baseline on held-out, checkpoint + feature-spec JSON.
-- [ ] B4 `samd/fusion/gate_head.py` online inference +
-      `drafter_mars_gate_kind/gate_head_path/gate_tau` config + CLI.
-- [ ] B5 Tests: dataset labeling on synthetic fixtures (torch-free where
-      possible); head forward shape/threshold (torch-gated).
-- [ ] B6 Server: capture q0-99/train, held-out AUC report, online arm vs
-      ratio arm; record results.
+- [ ] B1 Capture: `--gate-head-capture <path>` → per-step JSONL with
+      per-top-path-parent features, accepted path, graft node ranges +
+      accepted counts (trigger stream from plain run; budget stream from
+      K=2/b12 run); zero overhead when off.
+- [ ] B2 `evaluation/gate_head/dataset.py`: streams → (X, y_trigger,
+      y_budget, masks); boundary labeling with below-divergence masking;
+      question-id split 0-99/100-131/132-164.
+- [ ] B3 `evaluation/gate_head/train.py`: shared-trunk multi-task MLP
+      (BCE trigger + CE budget over {0,4,8,12}), held-out trigger AUC +
+      budget accuracy vs ratio-threshold baseline, checkpoint +
+      feature-spec/normalization JSON.
+- [ ] B4 `samd/fusion/gate_head.py` online: batched per-step forward, top-K
+      selection above tau, per-graft learned budget (reuses Phase A
+      multi-graft machinery + total cap); config/CLI
+      `drafter_mars_gate_kind/gate_head_path/gate_tau`; missing checkpoint
+      with gate_kind="learned" → hard error.
+- [ ] B5 Tests: dataset labeling + masking on synthetic fixtures
+      (torch-free); head forward shape/threshold/top-K (torch-gated).
+- [ ] B6 Server: capture runs → train → AUC report → online arms ratio-K2 vs
+      learned-K2 vs learned-K2+learned-budget; record results.
 
 ## Validation commands
 
