@@ -24,7 +24,7 @@ server before Phase B starts (user decision 2026-07-15).
       baseline, g40, g40_k2, ext, g40_k2_ext); stale batch scripts removed.
       NOTE: graft length semantics changed (8 → n_predicts), so Phase A b8
       numbers are historical; horizon batch re-baselines everything.
-- [ ] A2.6 Server run + record results.
+- [x] A2.6 Server run + record results (4 batches; operating point r8k2_e16 = MAT +6.28% / +2.0% tok/s; see results-phase-a2.md).
 
 ### Phase A — adaptive trio
 
