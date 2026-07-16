@@ -46,6 +46,50 @@ def samd_forward(
     return output_ids, new_token, step, accept_length_list
 
 
+def print_active_runtime_config(args: argparse.Namespace) -> None:
+    """Print only knobs that affect the selected draft/fusion path."""
+    print("tree_method:", args.tree_method)
+    print("fusion_mode:", args.fusion_mode)
+    print("tree_fusion:", args.tree_fusion)
+    print("len_threshold:", args.samd_len_threshold)
+    print("len_bias:", args.samd_len_bias)
+    print("n_predicts:", args.samd_n_predicts)
+    print("max_cache_len:", args.max_cache_len)
+
+    if args.tree_method == "eagle3":
+        print("eagle3_total_token:", args.eagle3_total_token)
+        print("eagle3_depth:", args.eagle3_depth)
+        print("eagle3_top_k:", args.eagle3_top_k)
+
+    if args.fusion_mode == "drafter_mars":
+        print("drafter_mars_theta:", args.drafter_mars_theta)
+        print("drafter_mars_repair:", args.drafter_mars_repair)
+        print("drafter_mars_max_grafts:", args.drafter_mars_max_grafts)
+        print("drafter_mars_extend:", args.drafter_mars_extend)
+        print("drafter_mars_adaptive_theta:", args.drafter_mars_adaptive_theta)
+        if args.drafter_mars_adaptive_theta:
+            print(
+                "drafter_mars_target_trigger_rate:",
+                args.drafter_mars_target_trigger_rate,
+            )
+            print("drafter_mars_theta_step:", args.drafter_mars_theta_step)
+        if args.drafter_mars_repair == "naive_fuse":
+            print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
+            print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
+            print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
+
+    if args.tree_fusion == "sam_tree_union_prune":
+        print("sam_tree_max_nodes:", args.sam_tree_max_nodes)
+        print("sam_tree_top_k:", args.sam_tree_top_k)
+        print("sam_tree_alpha:", args.sam_tree_alpha)
+        print("sam_tree_max_depth:", args.sam_tree_max_depth)
+    elif args.tree_fusion == "eagle_prefix_sam_expand":
+        print("sam_prefix_max_added_nodes:", args.sam_prefix_max_added_nodes)
+        print("sam_prefix_top_k:", args.sam_prefix_top_k)
+        print("sam_prefix_min_depth:", args.sam_prefix_min_depth)
+        print("sam_prefix_max_depth:", args.sam_prefix_max_depth)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -185,6 +229,8 @@ if __name__ == "__main__":
     parser.add_argument("--drafter_mars_theta_step", type=float, default=0.02)
     parser.add_argument("--drafter_mars_max_grafts", type=int, default=1)
     parser.add_argument("--drafter_mars_extend", action="store_true")
+    parser.add_argument("--drafter_mars_graft_horizon", type=int, default=None)
+    parser.add_argument("--drafter_mars_extend_horizon", type=int, default=None)
     parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
     parser.add_argument("--sam_tree_top_k", type=int, default=4)
     parser.add_argument("--sam_tree_alpha", type=float, default=4.0)
@@ -239,32 +285,7 @@ if __name__ == "__main__":
         raise SystemExit("--profile-fusion currently supports single-process evaluation only")
 
     print(f"Output to {answer_file}")
-    
-    print("len_bias:", args.samd_len_bias)
-    print("len_threshold:", args.samd_len_threshold)
-    print("tree_fusion:", args.tree_fusion)
-    print("fusion_mode:", args.fusion_mode)
-    print("drafter_mars_theta:", args.drafter_mars_theta)
-    print("drafter_mars_repair:", args.drafter_mars_repair)
-    print("drafter_mars_adaptive_theta:", args.drafter_mars_adaptive_theta)
-    print("drafter_mars_target_trigger_rate:", args.drafter_mars_target_trigger_rate)
-    print("drafter_mars_theta_step:", args.drafter_mars_theta_step)
-    print("drafter_mars_max_grafts:", args.drafter_mars_max_grafts)
-    print("drafter_mars_extend:", args.drafter_mars_extend)
-    print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
-    print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
-    print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
-    print("sam_tree_max_nodes:", args.sam_tree_max_nodes)
-    print("sam_tree_top_k:", args.sam_tree_top_k)
-    print("sam_tree_alpha:", args.sam_tree_alpha)
-    print("sam_tree_max_depth:", args.sam_tree_max_depth)
-    print("sam_prefix_max_added_nodes:", args.sam_prefix_max_added_nodes)
-    print("sam_prefix_top_k:", args.sam_prefix_top_k)
-    print("sam_prefix_min_depth:", args.sam_prefix_min_depth)
-    print("sam_prefix_max_depth:", args.sam_prefix_max_depth)
-    print("eagle3_total_token:", args.eagle3_total_token)
-    print("eagle3_depth:", args.eagle3_depth)
-    print("eagle3_top_k:", args.eagle3_top_k)
+    print_active_runtime_config(args)
 
     fusion_profiler = None
     if args.profile_fusion:
@@ -273,18 +294,30 @@ if __name__ == "__main__":
             args.fusion_profile_summary_file
             or "{}.fusion_profile.txt".format(answer_file)
         )
+        profile_metadata = {
+            "bench_name": args.bench_name,
+            "model_id": args.model_id,
+            "tree_method": args.tree_method,
+            "fusion_mode": args.fusion_mode,
+            "tree_fusion": args.tree_fusion,
+            "samd_len_threshold": args.samd_len_threshold,
+            "max_cache_len": args.max_cache_len,
+        }
+        if args.fusion_mode == "drafter_mars":
+            profile_metadata.update(
+                {
+                    "drafter_mars_theta": args.drafter_mars_theta,
+                    "drafter_mars_repair": args.drafter_mars_repair,
+                    "drafter_mars_max_grafts": args.drafter_mars_max_grafts,
+                    "drafter_mars_extend": args.drafter_mars_extend,
+                    "drafter_mars_adaptive_theta": args.drafter_mars_adaptive_theta,
+                }
+            )
         fusion_profiler = FusionProfiler(
             enabled=True,
             trace_path=fusion_profile_file,
             summary_path=fusion_profile_summary_file,
-            metadata={
-                "bench_name": args.bench_name,
-                "model_id": args.model_id,
-                "fusion_mode": args.fusion_mode,
-                "tree_fusion": args.tree_fusion,
-                "samd_len_threshold": args.samd_len_threshold,
-                "max_cache_len": args.max_cache_len,
-            },
+            metadata=profile_metadata,
         )
         print("profile_fusion:", True)
         print("fusion_profile_file:", fusion_profile_file)
@@ -328,6 +361,8 @@ if __name__ == "__main__":
         drafter_mars_theta_step=args.drafter_mars_theta_step,
         drafter_mars_max_grafts=args.drafter_mars_max_grafts,
         drafter_mars_extend=args.drafter_mars_extend,
+        drafter_mars_graft_horizon=args.drafter_mars_graft_horizon,
+        drafter_mars_extend_horizon=args.drafter_mars_extend_horizon,
         tree_model_path=args.tree_model_path,
         eagle3_total_token=args.eagle3_total_token,
         eagle3_depth=args.eagle3_depth,

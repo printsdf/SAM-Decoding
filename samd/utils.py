@@ -123,6 +123,8 @@ def gen_candidates(
         # Adaptive-theta controller (per request, created in DraftModel.reset);
         # None unless drafter_mars_adaptive_theta is on — metadata's
         # drafter_mars_theta always records the theta actually used.
+        graft_horizon = samd_config.drafter_mars_graft_horizon or samd_config.n_predicts
+        extend_horizon = samd_config.drafter_mars_extend_horizon or samd_config.n_predicts
         controller = getattr(draft, "drafter_mars_controller", None)
         theta = (
             controller.theta
@@ -268,14 +270,14 @@ def gen_candidates(
                         sam_candidates = draft.sam_dyn.gen_draft_raw(
                             dyn_index,
                             sam_start_token,
-                            samd_config.n_predicts,
+                            graft_horizon,
                         )
                         sam_match_length = int(dyn_length)
                     else:
                         sam_candidates = draft.sam_static.gen_draft_raw(
                             static_index,
                             sam_start_token,
-                            samd_config.n_predicts,
+                            graft_horizon,
                         )
                         sam_match_length = max(int(match_static_prefix), 0)
                 finally:
@@ -401,12 +403,12 @@ def gen_candidates(
                     match_static_prefix = static_length - draft.len_bias
                     if dyn_length >= match_static_prefix:
                         continuation = draft.sam_dyn.gen_draft_raw(
-                            dyn_index, prefix_tokens[-1], samd_config.n_predicts
+                            dyn_index, prefix_tokens[-1], graft_horizon
                         )
                         match_length = int(dyn_length)
                     else:
                         continuation = draft.sam_static.gen_draft_raw(
-                            static_index, prefix_tokens[-1], samd_config.n_predicts
+                            static_index, prefix_tokens[-1], graft_horizon
                         )
                         match_length = max(int(match_static_prefix), 0)
                     if continuation is None or len(continuation) <= 1:
@@ -621,12 +623,12 @@ def gen_candidates(
                     match_static_prefix = static_length - draft.len_bias
                     if dyn_length >= match_static_prefix:
                         extension = draft.sam_dyn.gen_draft_raw(
-                            dyn_index, prefix_tokens[-1], samd_config.n_predicts
+                            dyn_index, prefix_tokens[-1], extend_horizon
                         )
                         extend_match = int(dyn_length)
                     else:
                         extension = draft.sam_static.gen_draft_raw(
-                            static_index, prefix_tokens[-1], samd_config.n_predicts
+                            static_index, prefix_tokens[-1], extend_horizon
                         )
                         extend_match = max(int(match_static_prefix), 0)
                 finally:

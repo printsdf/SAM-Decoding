@@ -42,6 +42,9 @@ class SamdConfig:
     drafter_mars_theta_step: float = field(default=0.02)
     drafter_mars_max_grafts: int = field(default=1)
     drafter_mars_extend: bool = field(default=False)
+    # Per-mechanism horizons; None = the author's n_predicts horizon.
+    drafter_mars_graft_horizon: Optional[int] = field(default=None)
+    drafter_mars_extend_horizon: Optional[int] = field(default=None)
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -110,14 +113,22 @@ class SamdConfig:
             raise ValueError("drafter_mars_max_grafts must be a positive integer")
         if not isinstance(self.drafter_mars_extend, bool):
             raise ValueError("drafter_mars_extend must be a bool")
+        for name in ("drafter_mars_graft_horizon", "drafter_mars_extend_horizon"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError("{} must be None or a positive integer".format(name))
         if self.fusion_mode == "drafter_mars":
             # Cache guard sizing: max_predicts must cover the largest per-step
             # draft. Repair (triggered) and leaf extension (not triggered) are
             # mutually exclusive per step; extension uses the SAM n_predicts
             # horizon like the baseline sequence draft (which itself needs
             # n_predicts + 1). The stock default 70 only covered tree + 8.
-            repair_worst = self.drafter_mars_max_grafts * self.n_predicts
-            extend_worst = self.n_predicts if self.drafter_mars_extend else 0
+            graft_horizon = self.drafter_mars_graft_horizon or self.n_predicts
+            extend_horizon = self.drafter_mars_extend_horizon or self.n_predicts
+            repair_worst = self.drafter_mars_max_grafts * graft_horizon
+            extend_worst = extend_horizon if self.drafter_mars_extend else 0
             worst_step = max(
                 self.n_predicts + 1,
                 self.eagle3_total_token + 1 + max(repair_worst, extend_worst),

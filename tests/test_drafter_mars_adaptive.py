@@ -112,6 +112,8 @@ def test_config_validation_new_fields():
         {"drafter_mars_theta_step": 0.0},
         {"drafter_mars_max_grafts": 0},
         {"drafter_mars_max_grafts": True},
+        {"drafter_mars_graft_horizon": 0},
+        {"drafter_mars_extend_horizon": -1},
     ):
         with pytest.raises(ValueError):
             _config(**bad)
