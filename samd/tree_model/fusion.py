@@ -231,10 +231,25 @@ class TreeSpec:
     def union_sam_tree(self, sam_tree: "TreeSpec") -> Tuple["TreeSpec", Dict[str, int]]:
         if int(sam_tree.tokens[0]) != self.tokens[0]:
             raise ValueError("union SAM tree must start with the TreeSpec root token")
+        return self.graft_tree_at(0, sam_tree)
+
+    def graft_tree_at(
+        self,
+        anchor_index: int,
+        sam_tree: "TreeSpec",
+    ) -> Tuple["TreeSpec", Dict[str, int]]:
+        """``union_sam_tree`` anchored at an arbitrary node.
+
+        ``sam_tree``'s root is identified with the anchor node (its token is
+        the anchor's token); children merge with walk-reuse-or-append
+        semantics level by level.
+        """
+        if anchor_index < 0 or anchor_index >= len(self.tokens):
+            raise IndexError("anchor_index out of range")
 
         tokens = list(self.tokens)
         parents = list(self.parents)
-        sam_to_fused = {0: 0}
+        sam_to_fused = {0: int(anchor_index)}
         sam_added_nodes = 0
         merged_nodes = 0
 

@@ -359,6 +359,130 @@ def gen_candidates(
                         )
                     skip_reason = "graft_added_nothing"
 
+        if ratio_triggered and repair == "subtree":
+            from .fusion.drafter_mars_gate import earliest_top_path_trigger
+            from .sam.tree_draft import SamTreeBudget, build_sam_tree
+
+            trigger = earliest_top_path_trigger(
+                eagle_parents,
+                eagle_logprobs,
+                eagle_raw_logits,
+                theta,
+            )
+            if trigger is None:
+                skip_reason = "no_trigger_info"
+            else:
+                trigger_depth = int(trigger.parent_depth)
+                chain = []
+                node = trigger.parent_index
+                while node != -1:
+                    chain.append(node)
+                    node = eagle_parents[node]
+                chain.reverse()
+                prefix_tokens = [int(eagle_tokens[i]) for i in chain]
+                sam_start_token = prefix_tokens[-1]
+
+                timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
+                try:
+                    # Subtree repair uses the dynamic SAM only: cnt_endpos
+                    # branch frequencies exist only there.
+                    dyn_index, dyn_length = (
+                        draft.sam_dyn.cur_index,
+                        draft.sam_dyn.cur_length,
+                    )
+                    for token in prefix_tokens:
+                        dyn_index, dyn_length = draft.sam_dyn.transfer_state(
+                            dyn_index, dyn_length, token
+                        )
+                    budget = SamTreeBudget(
+                        max_nodes=graft_horizon,
+                        top_k=samd_config.sam_tree_top_k,
+                        alpha=samd_config.sam_tree_alpha,
+                        max_depth=samd_config.sam_tree_max_depth,
+                    )
+                    sam_tree, sam_tree_stats = build_sam_tree(
+                        draft.sam_dyn.states,
+                        dyn_index,
+                        dyn_length,
+                        sam_start_token,
+                        budget,
+                    )
+                    sam_match_length = int(dyn_length)
+                finally:
+                    if profiler is not None:
+                        profiler.end_section("draft_sam", timer)
+
+                if len(sam_tree.tokens) <= 1:
+                    skip_reason = "empty_sam_continuation"
+                else:
+                    timer = (
+                        profiler.start_section("fusion_logic")
+                        if profiler is not None
+                        else 0.0
+                    )
+                    try:
+                        tree_spec = TreeSpec(
+                            tokens=[int(token) for token in eagle_tokens],
+                            parents=list(eagle_parents),
+                        )
+                        fused_tree_spec, graft_stats = tree_spec.graft_tree_at(
+                            trigger.parent_index,
+                            sam_tree,
+                        )
+                        sam_nodes_added = int(graft_stats["sam_added_nodes"])
+                        if sam_nodes_added > 0:
+                            fused_buffers = fused_tree_spec.to_buffers(
+                                device=device,
+                                mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
+                            )
+                            fused_tokens = torch.tensor(
+                                fused_tree_spec.tokens,
+                                dtype=torch.long,
+                                device=device,
+                            )
+                            tokens = fused_tokens.unsqueeze(0)
+                            tokens_ext = torch.cat(
+                                [
+                                    fused_tokens,
+                                    torch.zeros(1, dtype=torch.long, device=device),
+                                ]
+                            )
+                            candidate_tokens = tokens_ext[
+                                fused_buffers["tree_retrieve_indices"]
+                            ]
+                    finally:
+                        if profiler is not None:
+                            profiler.end_section("fusion_logic", timer)
+
+                    if sam_nodes_added > 0:
+                        metadata = {
+                            "mode": "drafter_mars",
+                            "repair": "subtree",
+                            "ratio_triggered": True,
+                            "max_top_path_ratio": float(max_top_path_ratio),
+                            "trigger_depth": trigger_depth,
+                            "trigger_ratio": float(trigger.ratio),
+                            "drafter_mars_theta": float(theta),
+                            "eagle_nodes": eagle_nonroot_nodes,
+                            "sam_nodes": sam_nodes_added,
+                            "sam_tree_nodes": len(sam_tree.tokens) - 1,
+                            "merged_nodes": int(graft_stats["merged_nodes"]),
+                            "final_nodes": len(fused_tree_spec.tokens) - 1,
+                            "sam_match_length": int(sam_match_length),
+                            "prefix_length": len(prefix_tokens),
+                            "sam_skipped": False,
+                        }
+                        draft.record_naive_fusion(metadata)
+                        if profiler is not None:
+                            profiler.add_step_metadata(metadata)
+                        return Candidates(
+                            CandidateType.tree,
+                            tokens,
+                            candidate_tokens,
+                            fused_buffers,
+                        )
+                    skip_reason = "graft_added_nothing"
+
         if (
             ratio_triggered
             and repair == "graft"

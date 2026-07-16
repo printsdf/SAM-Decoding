@@ -36,7 +36,7 @@ class SamdConfig:
     fusion_truncate_strategy: Literal["score", "depth_first"] = field(default="score")
     drafter_mars_theta: float = field(default=0.90)
     drafter_mars_variant: Literal["top_path"] = field(default="top_path")
-    drafter_mars_repair: Literal["graft", "naive_fuse"] = field(default="graft")
+    drafter_mars_repair: Literal["graft", "subtree", "naive_fuse"] = field(default="graft")
     drafter_mars_adaptive_theta: bool = field(default=False)
     drafter_mars_target_trigger_rate: float = field(default=0.75)
     drafter_mars_theta_step: float = field(default=0.02)
@@ -87,7 +87,7 @@ class SamdConfig:
             raise ValueError(
                 "unsupported drafter_mars_variant: {}".format(self.drafter_mars_variant)
             )
-        if self.drafter_mars_repair not in ("graft", "naive_fuse"):
+        if self.drafter_mars_repair not in ("graft", "subtree", "naive_fuse"):
             raise ValueError(
                 "unsupported drafter_mars_repair: {}".format(self.drafter_mars_repair)
             )

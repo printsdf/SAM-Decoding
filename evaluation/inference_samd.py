@@ -222,7 +222,7 @@ if __name__ == "__main__":
         "--drafter_mars_repair",
         type=str,
         default="graft",
-        choices=["graft", "naive_fuse"],
+        choices=["graft", "subtree", "naive_fuse"],
     )
     parser.add_argument("--drafter_mars_adaptive_theta", action="store_true")
     parser.add_argument("--drafter_mars_target_trigger_rate", type=float, default=0.75)
