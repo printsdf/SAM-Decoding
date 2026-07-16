@@ -66,6 +66,7 @@ def print_active_runtime_config(args: argparse.Namespace) -> None:
         print("drafter_mars_repair:", args.drafter_mars_repair)
         print("drafter_mars_max_grafts:", args.drafter_mars_max_grafts)
         print("drafter_mars_extend:", args.drafter_mars_extend)
+        print("drafter_mars_tree_budget:", args.drafter_mars_tree_budget)
         print("drafter_mars_adaptive_theta:", args.drafter_mars_adaptive_theta)
         if args.drafter_mars_adaptive_theta:
             print(
@@ -229,6 +230,8 @@ if __name__ == "__main__":
     parser.add_argument("--drafter_mars_theta_step", type=float, default=0.02)
     parser.add_argument("--drafter_mars_max_grafts", type=int, default=1)
     parser.add_argument("--drafter_mars_extend", action="store_true")
+    parser.add_argument("--drafter_mars_oracle", action="store_true")
+    parser.add_argument("--drafter_mars_tree_budget", type=int, default=None)
     parser.add_argument("--drafter_mars_graft_horizon", type=int, default=None)
     parser.add_argument("--drafter_mars_extend_horizon", type=int, default=None)
     parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
@@ -310,6 +313,7 @@ if __name__ == "__main__":
                     "drafter_mars_repair": args.drafter_mars_repair,
                     "drafter_mars_max_grafts": args.drafter_mars_max_grafts,
                     "drafter_mars_extend": args.drafter_mars_extend,
+                    "drafter_mars_tree_budget": args.drafter_mars_tree_budget,
                     "drafter_mars_adaptive_theta": args.drafter_mars_adaptive_theta,
                 }
             )
@@ -361,6 +365,8 @@ if __name__ == "__main__":
         drafter_mars_theta_step=args.drafter_mars_theta_step,
         drafter_mars_max_grafts=args.drafter_mars_max_grafts,
         drafter_mars_extend=args.drafter_mars_extend,
+        drafter_mars_oracle=args.drafter_mars_oracle,
+        drafter_mars_tree_budget=args.drafter_mars_tree_budget,
         drafter_mars_graft_horizon=args.drafter_mars_graft_horizon,
         drafter_mars_extend_horizon=args.drafter_mars_extend_horizon,
         tree_model_path=args.tree_model_path,

@@ -42,6 +42,8 @@ class SamdConfig:
     drafter_mars_theta_step: float = field(default=0.02)
     drafter_mars_max_grafts: int = field(default=1)
     drafter_mars_extend: bool = field(default=False)
+    # Root-inclusive final size cap for repaired/extended EAGLE trees.
+    drafter_mars_tree_budget: Optional[int] = field(default=None)
     # Per-mechanism horizons; None = the author's n_predicts horizon.
     drafter_mars_graft_horizon: Optional[int] = field(default=None)
     drafter_mars_extend_horizon: Optional[int] = field(default=None)
@@ -113,6 +115,17 @@ class SamdConfig:
             raise ValueError("drafter_mars_max_grafts must be a positive integer")
         if not isinstance(self.drafter_mars_extend, bool):
             raise ValueError("drafter_mars_extend must be a bool")
+        if not isinstance(self.drafter_mars_oracle, bool):
+            raise ValueError("drafter_mars_oracle must be a bool")
+        if self.drafter_mars_tree_budget is not None:
+            if (
+                not isinstance(self.drafter_mars_tree_budget, int)
+                or isinstance(self.drafter_mars_tree_budget, bool)
+                or self.drafter_mars_tree_budget < 1
+            ):
+                raise ValueError(
+                    "drafter_mars_tree_budget must be None or a positive integer"
+                )
         for name in ("drafter_mars_graft_horizon", "drafter_mars_extend_horizon"):
             value = getattr(self, name)
             if value is None:
@@ -129,6 +142,10 @@ class SamdConfig:
             extend_horizon = self.drafter_mars_extend_horizon or self.n_predicts
             repair_worst = self.drafter_mars_max_grafts * graft_horizon
             extend_worst = extend_horizon if self.drafter_mars_extend else 0
+            if self.drafter_mars_oracle:
+                # Grafts n_predicts at every greedy top-path parent (<= depth).
+                repair_worst = (self.eagle3_depth + 1) * self.n_predicts
+                extend_worst = 0
             worst_step = max(
                 self.n_predicts + 1,
                 self.eagle3_total_token + 1 + max(repair_worst, extend_worst),

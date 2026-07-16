@@ -72,6 +72,22 @@ def top_path_ratio_trigger(
     return max_ratio > theta, max_ratio
 
 
+def all_top_path_parents(
+    parents: Sequence[int],
+    logprobs: Optional[Sequence[float]],
+) -> List[TriggerInfo]:
+    """Every top-path parent, ungated (oracle upper-bound: graft everywhere).
+
+    ratio is filled where a raw pair is unavailable-agnostic — callers that
+    only need (parent_index, parent_depth) ignore it; here ratio is set to inf
+    so downstream ratio-ordered logic treats all as maximal.
+    """
+    triggers: List[TriggerInfo] = []
+    for depth, child_index in enumerate(greedy_top_path(parents, logprobs)[1:]):
+        triggers.append(TriggerInfo(parents[child_index], depth, child_index, float("inf")))
+    return triggers
+
+
 def all_top_path_triggers(
     parents: Sequence[int],
     logprobs: Optional[Sequence[float]],

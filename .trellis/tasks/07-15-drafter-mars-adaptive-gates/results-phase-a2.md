@@ -57,8 +57,36 @@ author's walk-reuse graft semantics; verify-cost data fixes the horizons
   per-element tensor buffer build (reverted, cf7b8d7..1a60205), single-knob
   horizon (realloc batch).
 
+## Batch 4: subtree injection — falsified (2026-07-16)
+
+Hypothesis: injecting a branching SAM subtree at the uncertain parent (multiple
+candidate continuations) beats a single chain. Result: it does NOT.
+
+| arm (theta=0.86, extend=16) | MAT | MAT+% | tok/s | speedup |
+| --- | ---: | ---: | ---: | ---: |
+| comp_r8k2_e16 (chain repair) | 7.9550 | +6.28 | 219.75 | 1.0199 |
+| sub_g8_k4 | 7.9110 | +5.69 | 219.58 | 1.0191 |
+| sub_g12_k4 (wide) | 7.9124 | +5.71 | 220.27 | 1.0223 |
+| sub_g12_k2 (narrow) | 7.8910 | +5.43 | 220.16 | 1.0218 |
+| sub_g16_k4 | 7.9166 | +5.77 | 219.73 | 1.0198 |
+
+Diagnostic: widening branches (k2 → k4 at g12) adds only +0.28pp MAT. SAM's
+`cnt_endpos`-ranked branches are pseudo-diversity — under greedy target only
+the top-1 continuation is accepted, so extra branches are wasted verify cost.
+**Conclusion (paper-worthy negative): SAM repair value is in DEPTH (how far the
+top-1 continuation reaches), not WIDTH (how many candidates). SAM is a
+high-quality chain source, not a tree source.** Consistent with the
+extension > repair > deep-EAGLE node economics.
+
+SAM-as-draft-source is exhausted: chain repair + leaf extension at +6.28% MAT /
++2.0% tok/s is its ceiling. Next: oracle upper-bound analysis to decide whether
+the ceiling is the SAM source (→ scope/systematic study) or our selector
+(→ learned policy).
+
 ## Next
 
+- Oracle upper-bound (in progress): per-step perfect selection over the current
+  mechanism set → is the headroom in the source or the selector?
 - Cross-domain batches (MT-Bench / GSM8K / domain-corpus QA) — decides the
   paper's claim scope; adaptive-theta (ACI) arm rides along.
 - Phase B learned head: predict (trigger, route, horizon) per site.

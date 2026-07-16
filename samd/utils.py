@@ -90,6 +90,30 @@ def _active_fusion_profiler(gen_config: SamdGenerationConfig):
     return None
 
 
+def _apply_drafter_mars_tree_budget(
+    tree_spec,
+    *,
+    samd_config: SamdConfig,
+    eagle_parents,
+    eagle_logprobs,
+):
+    """Apply the optional root-inclusive fused-tree budget."""
+    budget = samd_config.drafter_mars_tree_budget
+    if budget is None:
+        return tree_spec, {}
+
+    from .fusion.drafter_mars_gate import greedy_top_path
+    from .fusion.drafter_mars_prune import prune_eagle_leaves_to_budget
+
+    return prune_eagle_leaves_to_budget(
+        tree_spec,
+        eagle_node_count=len(eagle_parents),
+        eagle_logprobs=eagle_logprobs,
+        max_total_nodes=budget,
+        protected_indices=greedy_top_path(eagle_parents, eagle_logprobs),
+    )
+
+
 @profile_decorator("gen_candidates")
 def gen_candidates(
     sample_p: torch.Tensor,
@@ -217,6 +241,100 @@ def gen_candidates(
         trigger_depth = None
         skip_reason = None
 
+        if samd_config.drafter_mars_oracle:
+            # Upper bound: graft SAM (n_predicts horizon) at EVERY greedy
+            # top-path parent and at the leaf, ungated by ratio. eval_posterior
+            # then picks the longest accepted path, so the resulting MAT is the
+            # ceiling of the current mechanism set under perfect selection and
+            # unbounded budget.
+            from .fusion.drafter_mars_gate import all_top_path_parents
+
+            anchors = all_top_path_parents(eagle_parents, eagle_logprobs)
+            fused_tree_spec = TreeSpec(
+                tokens=[int(token) for token in eagle_tokens],
+                parents=list(eagle_parents),
+            )
+            timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
+            try:
+                for anchor in anchors:
+                    chain = []
+                    node = anchor.parent_index
+                    while node != -1:
+                        chain.append(node)
+                        node = eagle_parents[node]
+                    chain.reverse()
+                    prefix_tokens = [int(eagle_tokens[i]) for i in chain]
+                    dyn_index, dyn_length = (
+                        draft.sam_dyn.cur_index,
+                        draft.sam_dyn.cur_length,
+                    )
+                    static_index, static_length = (
+                        draft.sam_static.cur_index,
+                        draft.sam_static.cur_length,
+                    )
+                    for token in prefix_tokens:
+                        dyn_index, dyn_length = draft.sam_dyn.transfer_state(
+                            dyn_index, dyn_length, token
+                        )
+                        static_index, static_length = draft.sam_static.transfer_state(
+                            static_index, static_length, token
+                        )
+                    match_static_oracle = static_length - draft.len_bias
+                    if dyn_length >= match_static_oracle:
+                        continuation = draft.sam_dyn.gen_draft_raw(
+                            dyn_index, prefix_tokens[-1], samd_config.n_predicts
+                        )
+                    else:
+                        continuation = draft.sam_static.gen_draft_raw(
+                            static_index, prefix_tokens[-1], samd_config.n_predicts
+                        )
+                    if continuation is not None and len(continuation) > 1:
+                        fused_tree_spec = fused_tree_spec.graft_sequence_at(
+                            anchor.parent_index, continuation[1:]
+                        )
+            finally:
+                if profiler is not None:
+                    profiler.end_section("draft_sam", timer)
+
+            timer = profiler.start_section("fusion_logic") if profiler is not None else 0.0
+            try:
+                oracle_nodes = len(fused_tree_spec.tokens) - len(eagle_tokens)
+                if oracle_nodes > 0:
+                    fused_buffers = fused_tree_spec.to_buffers(
+                        device=device,
+                        mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
+                    )
+                    fused_tokens = torch.tensor(
+                        fused_tree_spec.tokens, dtype=torch.long, device=device
+                    )
+                    tokens = fused_tokens.unsqueeze(0)
+                    tokens_ext = torch.cat(
+                        [fused_tokens, torch.zeros(1, dtype=torch.long, device=device)]
+                    )
+                    candidate_tokens = tokens_ext[fused_buffers["tree_retrieve_indices"]]
+            finally:
+                if profiler is not None:
+                    profiler.end_section("fusion_logic", timer)
+
+            if oracle_nodes > 0:
+                metadata = {
+                    "mode": "drafter_mars",
+                    "repair": "oracle",
+                    "ratio_triggered": bool(ratio_triggered),
+                    "drafter_mars_theta": float(theta),
+                    "eagle_nodes": eagle_nonroot_nodes,
+                    "sam_nodes": int(oracle_nodes),
+                    "final_nodes": len(fused_tree_spec.tokens) - 1,
+                    "anchor_count": len(anchors),
+                    "sam_skipped": False,
+                }
+                draft.record_naive_fusion(metadata)
+                if profiler is not None:
+                    profiler.add_step_metadata(metadata)
+                return Candidates(
+                    CandidateType.tree, tokens, candidate_tokens, fused_buffers
+                )
+
         if (
             ratio_triggered
             and repair == "graft"
@@ -287,6 +405,7 @@ def gen_candidates(
                 if sam_candidates is None or len(sam_candidates) <= 1:
                     skip_reason = "empty_sam_continuation"
                 else:
+                    prune_stats = {}
                     timer = (
                         profiler.start_section("fusion_logic")
                         if profiler is not None
@@ -309,6 +428,12 @@ def gen_candidates(
                             tree_spec.tokens
                         )
                         if sam_nodes_added > 0:
+                            fused_tree_spec, prune_stats = _apply_drafter_mars_tree_budget(
+                                fused_tree_spec,
+                                samd_config=samd_config,
+                                eagle_parents=eagle_parents,
+                                eagle_logprobs=eagle_logprobs,
+                            )
                             fused_buffers = fused_tree_spec.to_buffers(
                                 device=device,
                                 mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
@@ -348,6 +473,7 @@ def gen_candidates(
                             "prefix_length": len(prefix_tokens),
                             "sam_skipped": False,
                         }
+                        metadata.update(prune_stats)
                         draft.record_naive_fusion(metadata)
                         if profiler is not None:
                             profiler.add_step_metadata(metadata)
@@ -415,6 +541,7 @@ def gen_candidates(
                 if len(sam_tree.tokens) <= 1:
                     skip_reason = "empty_sam_continuation"
                 else:
+                    prune_stats = {}
                     timer = (
                         profiler.start_section("fusion_logic")
                         if profiler is not None
@@ -431,6 +558,12 @@ def gen_candidates(
                         )
                         sam_nodes_added = int(graft_stats["sam_added_nodes"])
                         if sam_nodes_added > 0:
+                            fused_tree_spec, prune_stats = _apply_drafter_mars_tree_budget(
+                                fused_tree_spec,
+                                samd_config=samd_config,
+                                eagle_parents=eagle_parents,
+                                eagle_logprobs=eagle_logprobs,
+                            )
                             fused_buffers = fused_tree_spec.to_buffers(
                                 device=device,
                                 mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
@@ -472,6 +605,7 @@ def gen_candidates(
                             "prefix_length": len(prefix_tokens),
                             "sam_skipped": False,
                         }
+                        metadata.update(prune_stats)
                         draft.record_naive_fusion(metadata)
                         if profiler is not None:
                             profiler.add_step_metadata(metadata)
@@ -548,6 +682,7 @@ def gen_candidates(
             if not selected:
                 skip_reason = "empty_sam_continuation"
             else:
+                prune_stats = {}
                 timer = (
                     profiler.start_section("fusion_logic")
                     if profiler is not None
@@ -576,6 +711,12 @@ def gen_candidates(
                         })
                     sam_nodes_added = len(fused_tree_spec.tokens) - base_nodes
                     if sam_nodes_added > 0:
+                        fused_tree_spec, prune_stats = _apply_drafter_mars_tree_budget(
+                            fused_tree_spec,
+                            samd_config=samd_config,
+                            eagle_parents=eagle_parents,
+                            eagle_logprobs=eagle_logprobs,
+                        )
                         fused_buffers = fused_tree_spec.to_buffers(
                             device=device,
                             mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
@@ -617,6 +758,7 @@ def gen_candidates(
                         "prefix_length": int(selected[0][3]),
                         "sam_skipped": False,
                     }
+                    metadata.update(prune_stats)
                     draft.record_naive_fusion(metadata)
                     if profiler is not None:
                         profiler.add_step_metadata(metadata)
@@ -760,6 +902,7 @@ def gen_candidates(
                         profiler.end_section("draft_sam", timer)
 
                 if extension is not None and len(extension) > 1:
+                    prune_stats = {}
                     timer = (
                         profiler.start_section("fusion_logic")
                         if profiler is not None
@@ -778,6 +921,12 @@ def gen_candidates(
                             tree_spec.tokens
                         )
                         if extend_nodes > 0:
+                            fused_tree_spec, prune_stats = _apply_drafter_mars_tree_budget(
+                                fused_tree_spec,
+                                samd_config=samd_config,
+                                eagle_parents=eagle_parents,
+                                eagle_logprobs=eagle_logprobs,
+                            )
                             fused_buffers = fused_tree_spec.to_buffers(
                                 device=device,
                                 mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
@@ -822,6 +971,7 @@ def gen_candidates(
                             "prefix_length": len(prefix_tokens),
                             "sam_skipped": False,
                         }
+                        metadata.update(prune_stats)
                         if skip_reason is not None:
                             metadata["skip_reason"] = skip_reason
                         draft.record_naive_fusion(metadata)

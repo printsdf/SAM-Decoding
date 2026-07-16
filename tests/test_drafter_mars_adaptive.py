@@ -75,6 +75,14 @@ def test_all_triggers_ascending_depth_and_consistent_with_earliest():
     assert triggers[0] == earliest
 
 
+def test_all_top_path_parents_ungated():
+    parents_fn = _gate.all_top_path_parents
+    anchors = parents_fn(PARENTS, LOGPROBS)
+    # greedy path 0->1->3->4 has parents 0,1,3 (all, ungated by ratio)
+    assert [a.parent_depth for a in anchors] == [0, 1, 2]
+    assert all(a.ratio == float("inf") for a in anchors)
+
+
 def test_all_triggers_empty_cases():
     assert all_top_path_triggers(PARENTS, LOGPROBS, RAW_HIGH_HIGH, 1.5) == []
     assert all_top_path_triggers(PARENTS, LOGPROBS, None, 0.5) == []
@@ -104,6 +112,7 @@ def test_config_validation_new_fields():
         drafter_mars_target_trigger_rate=0.6,
         drafter_mars_theta_step=0.01,
         drafter_mars_max_grafts=3,
+        drafter_mars_tree_budget=60,
     )
     for bad in (
         {"drafter_mars_adaptive_theta": 1},
@@ -114,6 +123,8 @@ def test_config_validation_new_fields():
         {"drafter_mars_max_grafts": True},
         {"drafter_mars_graft_horizon": 0},
         {"drafter_mars_extend_horizon": -1},
+        {"drafter_mars_tree_budget": 0},
+        {"drafter_mars_tree_budget": True},
     ):
         with pytest.raises(ValueError):
             _config(**bad)
