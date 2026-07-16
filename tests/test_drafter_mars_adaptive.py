@@ -19,7 +19,6 @@ _adaptive = _load("drafter_mars_adaptive")
 _gate = _load("drafter_mars_gate")
 
 AdaptiveThetaController = _adaptive.AdaptiveThetaController
-resolve_graft_budget = _adaptive.resolve_graft_budget
 all_top_path_triggers = _gate.all_top_path_triggers
 earliest_top_path_trigger = _gate.earliest_top_path_trigger
 
@@ -64,33 +63,8 @@ def test_controller_ema_starts_at_target():
     assert ctl.theta == 0.86
 
 
-def test_budget_fixed_is_base():
-    assert resolve_graft_budget("fixed", 8, 5, 0.99, 0.86) == 8
 
 
-def test_budget_depth_monotone_with_floor():
-    budgets = [resolve_graft_budget("depth", 8, d, None, 0.86) for d in range(9)]
-    assert budgets[0] == 8
-    assert all(a >= b for a, b in zip(budgets, budgets[1:]))
-    assert budgets[-1] == 2
-
-
-def test_budget_ratio_monotone_with_floor_and_cap():
-    theta = 0.86
-    budgets = [
-        resolve_graft_budget("ratio", 8, 0, r, theta)
-        for r in (0.86, 0.90, 0.95, 1.0, 1.5)
-    ]
-    assert all(a <= b for a, b in zip(budgets, budgets[1:]))
-    assert budgets[0] == 2  # floor at zero excess
-    assert budgets[3] == 8  # full excess reaches base
-    assert budgets[4] == 8  # capped at base
-    assert resolve_graft_budget("ratio", 8, 0, None, theta) == 2
-
-
-def test_budget_unknown_mode_raises():
-    with pytest.raises(ValueError):
-        resolve_graft_budget("bogus", 8, 0, 0.9, 0.86)
 
 
 def test_all_triggers_ascending_depth_and_consistent_with_earliest():
@@ -129,19 +103,15 @@ def test_config_validation_new_fields():
         drafter_mars_adaptive_theta=True,
         drafter_mars_target_trigger_rate=0.6,
         drafter_mars_theta_step=0.01,
-        drafter_mars_budget_mode="depth",
         drafter_mars_max_grafts=3,
-        drafter_mars_total_graft_nodes=24,
     )
     for bad in (
         {"drafter_mars_adaptive_theta": 1},
         {"drafter_mars_target_trigger_rate": 0.0},
         {"drafter_mars_target_trigger_rate": 1.0},
         {"drafter_mars_theta_step": 0.0},
-        {"drafter_mars_budget_mode": "bogus"},
         {"drafter_mars_max_grafts": 0},
         {"drafter_mars_max_grafts": True},
-        {"drafter_mars_total_graft_nodes": 0},
     ):
         with pytest.raises(ValueError):
             _config(**bad)

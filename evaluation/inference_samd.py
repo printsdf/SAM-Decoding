@@ -158,7 +158,7 @@ if __name__ == "__main__":
         "--fusion_mode",
         type=str,
         default="none",
-        choices=["none", "naive", "rejection_boundary", "drafter_mars"],
+        choices=["none", "drafter_mars"],
     )
     parser.add_argument("--fusion_max_draft_tokens", type=int, default=60)
     parser.add_argument(
@@ -173,7 +173,6 @@ if __name__ == "__main__":
         default="score",
         choices=["score", "depth_first"],
     )
-    parser.add_argument("--rejection_conf_threshold", type=float, default=0.5)
     parser.add_argument("--drafter_mars_theta", type=float, default=0.90)
     parser.add_argument(
         "--drafter_mars_repair",
@@ -184,18 +183,8 @@ if __name__ == "__main__":
     parser.add_argument("--drafter_mars_adaptive_theta", action="store_true")
     parser.add_argument("--drafter_mars_target_trigger_rate", type=float, default=0.75)
     parser.add_argument("--drafter_mars_theta_step", type=float, default=0.02)
-    parser.add_argument(
-        "--drafter_mars_budget_mode",
-        type=str,
-        default="fixed",
-        choices=["fixed", "depth", "ratio"],
-    )
     parser.add_argument("--drafter_mars_max_grafts", type=int, default=1)
-    parser.add_argument("--drafter_mars_total_graft_nodes", type=int, default=16)
-    parser.add_argument("--boundary_graft_threshold", type=float, default=1.5)
-    parser.add_argument("--boundary_graft_max_sam_nodes", type=int, default=8)
-    parser.add_argument("--boundary_graft_min_depth", type=int, default=3)
-    parser.add_argument("--boundary_graft_max_depth", type=int, default=8)
+    parser.add_argument("--drafter_mars_extend", action="store_true")
     parser.add_argument("--sam_tree_max_nodes", type=int, default=16)
     parser.add_argument("--sam_tree_top_k", type=int, default=4)
     parser.add_argument("--sam_tree_alpha", type=float, default=4.0)
@@ -260,9 +249,8 @@ if __name__ == "__main__":
     print("drafter_mars_adaptive_theta:", args.drafter_mars_adaptive_theta)
     print("drafter_mars_target_trigger_rate:", args.drafter_mars_target_trigger_rate)
     print("drafter_mars_theta_step:", args.drafter_mars_theta_step)
-    print("drafter_mars_budget_mode:", args.drafter_mars_budget_mode)
     print("drafter_mars_max_grafts:", args.drafter_mars_max_grafts)
-    print("drafter_mars_total_graft_nodes:", args.drafter_mars_total_graft_nodes)
+    print("drafter_mars_extend:", args.drafter_mars_extend)
     print("fusion_max_draft_tokens:", args.fusion_max_draft_tokens)
     print("fusion_dedup_strategy:", args.fusion_dedup_strategy)
     print("fusion_truncate_strategy:", args.fusion_truncate_strategy)
@@ -333,19 +321,13 @@ if __name__ == "__main__":
         fusion_max_draft_tokens=args.fusion_max_draft_tokens,
         fusion_dedup_strategy=args.fusion_dedup_strategy,
         fusion_truncate_strategy=args.fusion_truncate_strategy,
-        rejection_conf_threshold=args.rejection_conf_threshold,
         drafter_mars_theta=args.drafter_mars_theta,
         drafter_mars_repair=args.drafter_mars_repair,
         drafter_mars_adaptive_theta=args.drafter_mars_adaptive_theta,
         drafter_mars_target_trigger_rate=args.drafter_mars_target_trigger_rate,
         drafter_mars_theta_step=args.drafter_mars_theta_step,
-        drafter_mars_budget_mode=args.drafter_mars_budget_mode,
         drafter_mars_max_grafts=args.drafter_mars_max_grafts,
-        drafter_mars_total_graft_nodes=args.drafter_mars_total_graft_nodes,
-        boundary_graft_threshold=args.boundary_graft_threshold,
-        boundary_graft_max_sam_nodes=args.boundary_graft_max_sam_nodes,
-        boundary_graft_min_depth=args.boundary_graft_min_depth,
-        boundary_graft_max_depth=args.boundary_graft_max_depth,
+        drafter_mars_extend=args.drafter_mars_extend,
         tree_model_path=args.tree_model_path,
         eagle3_total_token=args.eagle3_total_token,
         eagle3_depth=args.eagle3_depth,

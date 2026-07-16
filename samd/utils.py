@@ -15,11 +15,7 @@ from transformers.generation.logits_process import (
 from profile_utils import profile_decorator
 from .samd_config import SamdConfig
 from .draft import DraftModel, Candidates, CandidateType    
-from .fusion.naive_fusion import (
-    candidate_trace_records,
-    fuse_eagle_sam_naive,
-    parse_eagle_tree,
-)
+from .fusion.naive_fusion import fuse_eagle_sam_naive
 
 
 def _extract_candidate_tokens_eagle(pred_ids, buffers, device: torch.device) -> torch.Tensor:
@@ -120,191 +116,7 @@ def gen_candidates(
 
     profiler = _active_fusion_profiler(gen_config)
 
-    if samd_config.fusion_mode == "naive":
-        timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
-        try:
-            index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
-            index_static, match_static_raw = draft.sam_static.lookup(start_token)
-            match_static = match_static_raw - draft.len_bias
-        finally:
-            if profiler is not None:
-                profiler.end_section("draft_sam", timer)
-        best_match = max(match_dyn, match_static)
-        samd_len_threshold = getattr(samd_config, "samd_len_threshold", None)
-        if samd_len_threshold is None:
-            samd_len_threshold = samd_config.len_threshold
-
-        if best_match < samd_len_threshold:
-            timer = profiler.start_section("draft_eagle") if profiler is not None else 0.0
-            try:
-                if profiler is not None:
-                    eagle_pred_ids, eagle_buffers, eagle_logprobs, eagle_raw_logits = (
-                        draft.tree_model.gen_draft(
-                            start_token,
-                            return_logprobs=True,
-                            return_raw_logits=True,
-                        )
-                    )
-                else:
-                    eagle_pred_ids, eagle_buffers = draft.tree_model.gen_draft(start_token)
-                    eagle_logprobs = None
-                    eagle_raw_logits = None
-            finally:
-                if profiler is not None:
-                    profiler.end_section("draft_eagle", timer)
-            eagle_nonroot_nodes = max(len(eagle_pred_ids) - 1, 0)
-            metadata = {
-                "mode": "naive",
-                "eagle_nodes": eagle_nonroot_nodes,
-                "sam_nodes": 0,
-                "merged_nodes": eagle_nonroot_nodes,
-                "final_nodes": eagle_nonroot_nodes,
-                "dedup_count": 0,
-                "both_proposed_count": 0,
-                "truncate_count": 0,
-                "truncated_count": 0,
-                "sam_skipped": True,
-                "sam_match_quality": int(best_match),
-                "threshold": samd_len_threshold,
-                "sam_contribution": 0,
-                "eagle_contribution": eagle_nonroot_nodes,
-                "both_contribution": 0,
-                "sam_avg_match_length": float(best_match),
-                "sam_max_match_length": max(int(best_match), 0),
-                "selected_eagle": eagle_nonroot_nodes,
-                "selected_sam": 0,
-                "selected_both": 0,
-                "node_sources": ["root"] + ["eagle"] * eagle_nonroot_nodes,
-                "sam_match_length": max(int(best_match), 0),
-            }
-            if profiler is not None:
-                eagle_tree = {
-                    "tokens": eagle_pred_ids,
-                    "tree_attn_mask": eagle_buffers["tree_attn_mask"],
-                    "tree_position_ids": eagle_buffers["tree_position_ids"],
-                    "tree_retrieve_indices": eagle_buffers["tree_retrieve_indices"],
-                }
-                metadata["oracle_candidates"] = candidate_trace_records(
-                    parse_eagle_tree(
-                        eagle_tree,
-                        start_token,
-                        eagle_logprobs=eagle_logprobs,
-                        eagle_raw_logits=eagle_raw_logits,
-                    )
-                )
-            draft.record_naive_fusion(metadata)
-            if profiler is not None:
-                profiler.add_step_metadata({
-                    "sam_skipped": True,
-                    "sam_match_quality": int(best_match),
-                    "threshold": int(samd_len_threshold),
-                    "eagle_nodes": eagle_nonroot_nodes,
-                    "sam_nodes": 0,
-                    "final_nodes": eagle_nonroot_nodes,
-                })
-            return Candidates(
-                type=CandidateType.tree,
-                tokens=torch.tensor([eagle_pred_ids], dtype=torch.long, device=device),
-                candidate_tokens=_extract_candidate_tokens_eagle(
-                    eagle_pred_ids,
-                    eagle_buffers,
-                    device,
-                ),
-                buffers_kwargs=eagle_buffers,
-            )
-
-        timer = profiler.start_section("draft_eagle") if profiler is not None else 0.0
-        try:
-            if profiler is not None:
-                eagle_tokens, eagle_buffers, eagle_logprobs, eagle_raw_logits = (
-                    draft.tree_model.gen_draft(
-                        start_token,
-                        return_logprobs=True,
-                        return_raw_logits=True,
-                    )
-                )
-            else:
-                eagle_tokens, eagle_buffers, eagle_logprobs = draft.tree_model.gen_draft(
-                    start_token,
-                    return_logprobs=True,
-                )
-                eagle_raw_logits = None
-        finally:
-            if profiler is not None:
-                profiler.end_section("draft_eagle", timer)
-        eagle_tree = {
-            "tokens": eagle_tokens,
-            "logprobs": eagle_logprobs,
-            "raw_logits": eagle_raw_logits,
-            "tree_attn_mask": eagle_buffers["tree_attn_mask"],
-            "tree_position_ids": eagle_buffers["tree_position_ids"],
-            "tree_retrieve_indices": eagle_buffers["tree_retrieve_indices"],
-        }
-
-        timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
-        try:
-            if match_dyn >= match_static:
-                sam_candidates = draft.sam_dyn.gen_draft_raw(
-                    index_dyn,
-                    start_token,
-                    samd_config.n_predicts,
-                )
-                sam_match_length = match_dyn
-            else:
-                sam_candidates = draft.sam_static.gen_draft_raw(
-                    index_static,
-                    start_token,
-                    samd_config.n_predicts,
-                )
-                sam_match_length = max(match_static, 0)
-        finally:
-            if profiler is not None:
-                profiler.end_section("draft_sam", timer)
-
-        timer = profiler.start_section("fusion_logic") if profiler is not None else 0.0
-        try:
-            fusion_config = samd_config.fusion_config
-            if profiler is not None:
-                fusion_config.debug = True
-            fused_tree = fuse_eagle_sam_naive(
-                eagle_tree=eagle_tree,
-                sam_candidates=sam_candidates,
-                start_token=start_token,
-                config=fusion_config,
-                sam_match_length=sam_match_length,
-                eagle_logprobs=eagle_logprobs,
-                eagle_raw_logits=eagle_raw_logits,
-            )
-            fused_tree.metadata.setdefault("sam_skipped", False)
-            draft.record_naive_fusion(fused_tree.metadata)
-            tokens = fused_tree.tokens.unsqueeze(0)
-            tokens_ext = torch.cat(
-                [fused_tree.tokens, torch.zeros(1, dtype=torch.long, device=fused_tree.tokens.device)]
-            )
-            candidate_tokens = tokens_ext[fused_tree.retrieve_indices]
-        finally:
-            if profiler is not None:
-                profiler.end_section("fusion_logic", timer)
-        if profiler is not None:
-            profiler.add_step_metadata({
-                "sam_skipped": False,
-                "sam_match_length": int(sam_match_length),
-                "eagle_nodes": int(fused_tree.metadata.get("eagle_nodes", 0)),
-                "sam_nodes": int(fused_tree.metadata.get("sam_nodes", 0)),
-                "final_nodes": int(fused_tree.metadata.get("final_nodes", 0)),
-                "selected_eagle": int(fused_tree.metadata.get("selected_eagle", 0)),
-                "selected_sam": int(fused_tree.metadata.get("selected_sam", 0)),
-                "selected_both": int(fused_tree.metadata.get("selected_both", 0)),
-            })
-        return Candidates(
-            CandidateType.tree,
-            tokens,
-            candidate_tokens,
-            fused_tree.buffers_kwargs,
-        )
-
     if samd_config.fusion_mode == "drafter_mars":
-        from .fusion.drafter_mars_adaptive import resolve_graft_budget
         from .fusion.drafter_mars_gate import top_path_ratio_trigger
         from .tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
 
@@ -408,7 +220,6 @@ def gen_candidates(
             and repair == "graft"
             and samd_config.drafter_mars_max_grafts == 1
         ):
-            from .fusion.boundary_graft import graft_sam_at_depth
             from .fusion.drafter_mars_gate import earliest_top_path_trigger
 
             trigger = earliest_top_path_trigger(
@@ -421,13 +232,6 @@ def gen_candidates(
                 skip_reason = "no_trigger_info"
             else:
                 trigger_depth = int(trigger.parent_depth)
-                graft_budget = resolve_graft_budget(
-                    samd_config.drafter_mars_budget_mode,
-                    samd_config.boundary_graft_max_sam_nodes,
-                    trigger.parent_depth,
-                    trigger.ratio,
-                    theta,
-                )
                 # Greedy top-path prefix: root .. triggering parent (inclusive).
                 chain = []
                 node = trigger.parent_index
@@ -464,14 +268,14 @@ def gen_candidates(
                         sam_candidates = draft.sam_dyn.gen_draft_raw(
                             dyn_index,
                             sam_start_token,
-                            graft_budget,
+                            samd_config.n_predicts,
                         )
                         sam_match_length = int(dyn_length)
                     else:
                         sam_candidates = draft.sam_static.gen_draft_raw(
                             static_index,
                             sam_start_token,
-                            graft_budget,
+                            samd_config.n_predicts,
                         )
                         sam_match_length = max(int(match_static_prefix), 0)
                 finally:
@@ -489,16 +293,15 @@ def gen_candidates(
                     try:
                         # sam_candidates[0] is sam_start_token (the triggering
                         # parent's token, already in the tree); graft only the
-                        # continuation at that parent.
+                        # continuation at that parent, author walk-reuse
+                        # semantics, full n_predicts horizon.
                         tree_spec = TreeSpec(
                             tokens=[int(token) for token in eagle_tokens],
                             parents=list(eagle_parents),
                         )
-                        fused_tree_spec = graft_sam_at_depth(
-                            eagle_tree=tree_spec,
-                            sam_candidates=sam_candidates[1:],
-                            parent_node_idx=trigger.parent_index,
-                            max_added_nodes=graft_budget,
+                        fused_tree_spec = tree_spec.graft_sequence_at(
+                            trigger.parent_index,
+                            sam_candidates[1:],
                         )
                         sam_nodes_added = len(fused_tree_spec.tokens) - len(
                             tree_spec.tokens
@@ -559,7 +362,6 @@ def gen_candidates(
             and repair == "graft"
             and samd_config.drafter_mars_max_grafts > 1
         ):
-            from .fusion.boundary_graft import graft_sam_at_depth
             from .fusion.drafter_mars_gate import all_top_path_triggers
 
             triggers = all_top_path_triggers(
@@ -569,26 +371,10 @@ def gen_candidates(
                 theta,
             )
             selected = []
-            total_planned = 0
             timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
             try:
                 for trigger in triggers:
                     if len(selected) >= samd_config.drafter_mars_max_grafts:
-                        break
-                    remaining = samd_config.drafter_mars_total_graft_nodes - total_planned
-                    if remaining <= 0:
-                        break
-                    budget = min(
-                        resolve_graft_budget(
-                            samd_config.drafter_mars_budget_mode,
-                            samd_config.boundary_graft_max_sam_nodes,
-                            trigger.parent_depth,
-                            trigger.ratio,
-                            theta,
-                        ),
-                        remaining,
-                    )
-                    if budget <= 0:
                         break
                     chain = []
                     node = trigger.parent_index
@@ -615,21 +401,19 @@ def gen_candidates(
                     match_static_prefix = static_length - draft.len_bias
                     if dyn_length >= match_static_prefix:
                         continuation = draft.sam_dyn.gen_draft_raw(
-                            dyn_index, prefix_tokens[-1], budget
+                            dyn_index, prefix_tokens[-1], samd_config.n_predicts
                         )
                         match_length = int(dyn_length)
                     else:
                         continuation = draft.sam_static.gen_draft_raw(
-                            static_index, prefix_tokens[-1], budget
+                            static_index, prefix_tokens[-1], samd_config.n_predicts
                         )
                         match_length = max(int(match_static_prefix), 0)
                     if continuation is None or len(continuation) <= 1:
                         # Empty continuation does not consume a graft slot.
                         continue
-                    continuation = continuation[1 : budget + 1]
-                    total_planned += len(continuation)
                     selected.append(
-                        (trigger, continuation, match_length, len(prefix_tokens))
+                        (trigger, continuation[1:], match_length, len(prefix_tokens))
                     )
             finally:
                 if profiler is not None:
@@ -650,15 +434,14 @@ def gen_candidates(
                     )
                     base_nodes = len(fused_tree_spec.tokens)
                     grafts_meta = []
-                    # Grafts only append nodes, so original parent indices stay
-                    # valid across sequential grafts.
+                    # Author walk-reuse semantics; grafts only append nodes,
+                    # so original parent indices stay valid across sequential
+                    # grafts.
                     for trigger, continuation, _match, _prefix in selected:
                         before = len(fused_tree_spec.tokens)
-                        fused_tree_spec = graft_sam_at_depth(
-                            eagle_tree=fused_tree_spec,
-                            sam_candidates=continuation,
-                            parent_node_idx=trigger.parent_index,
-                            max_added_nodes=len(continuation),
+                        fused_tree_spec = fused_tree_spec.graft_sequence_at(
+                            trigger.parent_index,
+                            continuation,
                         )
                         grafts_meta.append({
                             "depth": int(trigger.parent_depth),
@@ -807,6 +590,124 @@ def gen_candidates(
                 fused_tree.buffers_kwargs,
             )
 
+        # Leaf extension (drafter confident / repair unavailable): graft the
+        # SAM continuation at the greedy leaf, same n_predicts horizon as the
+        # baseline sequence draft — the tree keeps its paths, the greedy path
+        # gains up to n_predicts extra depth.
+        if samd_config.drafter_mars_extend:
+            from .fusion.drafter_mars_gate import greedy_top_path
+
+            path = greedy_top_path(eagle_parents, eagle_logprobs)
+            leaf = path[-1] if path else 0
+            if leaf != 0:
+                prefix_tokens = [int(eagle_tokens[i]) for i in path]
+                timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
+                try:
+                    dyn_index, dyn_length = (
+                        draft.sam_dyn.cur_index,
+                        draft.sam_dyn.cur_length,
+                    )
+                    static_index, static_length = (
+                        draft.sam_static.cur_index,
+                        draft.sam_static.cur_length,
+                    )
+                    for token in prefix_tokens:
+                        dyn_index, dyn_length = draft.sam_dyn.transfer_state(
+                            dyn_index, dyn_length, token
+                        )
+                        static_index, static_length = draft.sam_static.transfer_state(
+                            static_index, static_length, token
+                        )
+                    match_static_prefix = static_length - draft.len_bias
+                    if dyn_length >= match_static_prefix:
+                        extension = draft.sam_dyn.gen_draft_raw(
+                            dyn_index, prefix_tokens[-1], samd_config.n_predicts
+                        )
+                        extend_match = int(dyn_length)
+                    else:
+                        extension = draft.sam_static.gen_draft_raw(
+                            static_index, prefix_tokens[-1], samd_config.n_predicts
+                        )
+                        extend_match = max(int(match_static_prefix), 0)
+                finally:
+                    if profiler is not None:
+                        profiler.end_section("draft_sam", timer)
+
+                if extension is not None and len(extension) > 1:
+                    timer = (
+                        profiler.start_section("fusion_logic")
+                        if profiler is not None
+                        else 0.0
+                    )
+                    try:
+                        tree_spec = TreeSpec(
+                            tokens=[int(token) for token in eagle_tokens],
+                            parents=list(eagle_parents),
+                        )
+                        fused_tree_spec = tree_spec.graft_sequence_at(
+                            leaf,
+                            extension[1:],
+                        )
+                        extend_nodes = len(fused_tree_spec.tokens) - len(
+                            tree_spec.tokens
+                        )
+                        if extend_nodes > 0:
+                            fused_buffers = fused_tree_spec.to_buffers(
+                                device=device,
+                                mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
+                            )
+                            fused_tokens = torch.tensor(
+                                fused_tree_spec.tokens,
+                                dtype=torch.long,
+                                device=device,
+                            )
+                            tokens = fused_tokens.unsqueeze(0)
+                            tokens_ext = torch.cat(
+                                [
+                                    fused_tokens,
+                                    torch.zeros(1, dtype=torch.long, device=device),
+                                ]
+                            )
+                            candidate_tokens = tokens_ext[
+                                fused_buffers["tree_retrieve_indices"]
+                            ]
+                    finally:
+                        if profiler is not None:
+                            profiler.end_section("fusion_logic", timer)
+
+                    if extend_nodes > 0:
+                        metadata = {
+                            "mode": "drafter_mars",
+                            "repair": repair,
+                            "ratio_triggered": bool(ratio_triggered),
+                            "max_top_path_ratio": (
+                                float(max_top_path_ratio)
+                                if max_top_path_ratio is not None
+                                else None
+                            ),
+                            "trigger_depth": trigger_depth,
+                            "drafter_mars_theta": float(theta),
+                            "extended": True,
+                            "extend_depth": len(prefix_tokens) - 1,
+                            "eagle_nodes": eagle_nonroot_nodes,
+                            "sam_nodes": int(extend_nodes),
+                            "final_nodes": len(fused_tree_spec.tokens) - 1,
+                            "sam_match_length": int(extend_match),
+                            "prefix_length": len(prefix_tokens),
+                            "sam_skipped": False,
+                        }
+                        if skip_reason is not None:
+                            metadata["skip_reason"] = skip_reason
+                        draft.record_naive_fusion(metadata)
+                        if profiler is not None:
+                            profiler.add_step_metadata(metadata)
+                        return Candidates(
+                            CandidateType.tree,
+                            tokens,
+                            candidate_tokens,
+                            fused_buffers,
+                        )
+
         # Not triggered (or SAM repair unavailable): pure EAGLE3 tree.
         metadata = {
             "mode": "drafter_mars",
@@ -817,6 +718,7 @@ def gen_candidates(
             ),
             "trigger_depth": trigger_depth,
             "drafter_mars_theta": float(theta),
+            "extended": False,
             "eagle_nodes": eagle_nonroot_nodes,
             "sam_nodes": 0,
             "final_nodes": eagle_nonroot_nodes,
@@ -831,353 +733,6 @@ def gen_candidates(
         draft.record_naive_fusion(metadata)
         if profiler is not None:
             profiler.add_step_metadata(metadata)
-        return Candidates(
-            type=CandidateType.tree,
-            tokens=torch.tensor([eagle_tokens], dtype=torch.long, device=device),
-            candidate_tokens=_extract_candidate_tokens_eagle(
-                eagle_tokens,
-                eagle_buffers,
-                device,
-            ),
-            buffers_kwargs=eagle_buffers,
-        )
-
-    if samd_config.fusion_mode == "rejection_boundary":
-        from .fusion.rejection_boundary import (
-            compute_confidence_margin,
-            should_trigger_sam,
-        )
-
-        timer = profiler.start_section("draft_eagle") if profiler is not None else 0.0
-        try:
-            eagle_tokens, eagle_buffers, eagle_logprobs = draft.tree_model.gen_draft(
-                start_token,
-                return_logprobs=True,
-            )
-        finally:
-            if profiler is not None:
-                profiler.end_section("draft_eagle", timer)
-
-        eagle_tree = {
-            "tokens": eagle_tokens,
-            "logprobs": eagle_logprobs,
-            "tree_attn_mask": eagle_buffers["tree_attn_mask"],
-            "tree_position_ids": eagle_buffers["tree_position_ids"],
-            "tree_retrieve_indices": eagle_buffers["tree_retrieve_indices"],
-        }
-
-        # Extract root-level logprobs for confidence computation
-        logprobs_tensor = torch.as_tensor(
-            eagle_logprobs,
-            dtype=torch.float32,
-            device=device,
-        ).view(-1)
-        position_ids = eagle_buffers.get("tree_position_ids")
-        root_logprobs = logprobs_tensor.new_empty(0)
-        if position_ids is not None and logprobs_tensor.numel() > 0:
-            if isinstance(position_ids, torch.Tensor):
-                position_ids_tensor = position_ids.to(
-                    device=device,
-                    dtype=torch.long,
-                ).view(-1)
-            else:
-                position_ids_tensor = torch.tensor(
-                    position_ids,
-                    dtype=torch.long,
-                    device=device,
-                ).view(-1)
-            if position_ids_tensor.shape[0] == logprobs_tensor.shape[0]:
-                root_logprobs = logprobs_tensor[position_ids_tensor == 1]
-        if root_logprobs.numel() == 0 and logprobs_tensor.numel() > 1:
-            root_logprobs = logprobs_tensor[1:]
-
-        root_margin = compute_confidence_margin(root_logprobs.unsqueeze(0), depth=0)
-        threshold = samd_config.rejection_conf_threshold
-        eagle_nonroot_nodes = max(len(eagle_tokens) - 1, 0)
-
-        if should_trigger_sam(root_margin, threshold):
-            # Low confidence - trigger SAM
-            timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
-            try:
-                index_dyn, match_dyn = draft.sam_dyn.lookup(start_token)
-                index_static, match_static_raw = draft.sam_static.lookup(start_token)
-                match_static = match_static_raw - draft.len_bias
-                if match_dyn >= match_static:
-                    sam_candidates = draft.sam_dyn.gen_draft_raw(
-                        index_dyn,
-                        start_token,
-                        samd_config.n_predicts,
-                    )
-                    sam_match_length = match_dyn
-                else:
-                    sam_candidates = draft.sam_static.gen_draft_raw(
-                        index_static,
-                        start_token,
-                        samd_config.n_predicts,
-                    )
-                    sam_match_length = max(match_static, 0)
-            finally:
-                if profiler is not None:
-                    profiler.end_section("draft_sam", timer)
-
-            timer = profiler.start_section("fusion_logic") if profiler is not None else 0.0
-            try:
-                fusion_config = samd_config.fusion_config
-                if profiler is not None:
-                    fusion_config.debug = True
-                fused_tree = fuse_eagle_sam_naive(
-                    eagle_tree=eagle_tree,
-                    sam_candidates=sam_candidates,
-                    start_token=start_token,
-                    config=fusion_config,
-                    sam_match_length=sam_match_length,
-                    eagle_logprobs=eagle_logprobs,
-                )
-                fused_tree.metadata["mode"] = "rejection_boundary"
-                fused_tree.metadata["root_margin"] = float(root_margin)
-                fused_tree.metadata["rejection_conf_threshold"] = float(threshold)
-                fused_tree.metadata.setdefault("sam_skipped", False)
-                draft.record_naive_fusion(fused_tree.metadata)
-                tokens = fused_tree.tokens.unsqueeze(0)
-                tokens_ext = torch.cat(
-                    [
-                        fused_tree.tokens,
-                        torch.zeros(
-                            1,
-                            dtype=torch.long,
-                            device=fused_tree.tokens.device,
-                        ),
-                    ]
-                )
-                candidate_tokens = tokens_ext[fused_tree.retrieve_indices]
-            finally:
-                if profiler is not None:
-                    profiler.end_section("fusion_logic", timer)
-            if profiler is not None:
-                profiler.add_step_metadata({
-                    "sam_skipped": False,
-                    "root_margin": float(root_margin),
-                    "rejection_conf_threshold": float(threshold),
-                    "eagle_nodes": int(fused_tree.metadata.get("eagle_nodes", 0)),
-                    "sam_nodes": int(fused_tree.metadata.get("sam_nodes", 0)),
-                    "final_nodes": int(fused_tree.metadata.get("final_nodes", 0)),
-                })
-            return Candidates(
-                CandidateType.tree,
-                tokens,
-                candidate_tokens,
-                fused_tree.buffers_kwargs,
-            )
-
-        # High confidence - skip SAM, use pure EAGLE
-        metadata = {
-            "mode": "rejection_boundary",
-            "eagle_nodes": eagle_nonroot_nodes,
-            "sam_nodes": 0,
-            "final_nodes": eagle_nonroot_nodes,
-            "selected_eagle": eagle_nonroot_nodes,
-            "selected_sam": 0,
-            "selected_both": 0,
-            "node_sources": ["root"] + ["eagle"] * eagle_nonroot_nodes,
-            "sam_skipped": True,
-            "root_margin": float(root_margin),
-            "rejection_conf_threshold": float(threshold),
-        }
-        draft.record_naive_fusion(metadata)
-        if profiler is not None:
-            profiler.add_step_metadata(metadata)
-        return Candidates(
-            type=CandidateType.tree,
-            tokens=torch.tensor([eagle_tokens], dtype=torch.long, device=device),
-            candidate_tokens=_extract_candidate_tokens_eagle(
-                eagle_tokens,
-                eagle_buffers,
-                device,
-            ),
-            buffers_kwargs=eagle_buffers,
-        )
-
-    if samd_config.fusion_mode == "boundary_graft":
-        from .fusion.boundary_graft import (
-            predict_rejection_depth,
-            extract_prefix_tokens_and_node,
-            graft_sam_at_depth,
-        )
-        from .tree_model.fusion import TreeSpec
-
-        timer = profiler.start_section("draft_eagle") if profiler is not None else 0.0
-        try:
-            eagle_tokens, eagle_buffers, eagle_logprobs = draft.tree_model.gen_draft(
-                start_token,
-                return_logprobs=True,
-            )
-        finally:
-            if profiler is not None:
-                profiler.end_section("draft_eagle", timer)
-
-        # Predict rejection depth
-        position_ids = eagle_buffers.get("tree_position_ids")
-        predicted_depth = predict_rejection_depth(
-            logprobs=eagle_logprobs,
-            position_ids=position_ids,
-            threshold=samd_config.boundary_graft_threshold,
-            min_depth=samd_config.boundary_graft_min_depth,
-            max_depth=samd_config.boundary_graft_max_depth,
-        )
-
-        eagle_nonroot_nodes = max(len(eagle_tokens) - 1, 0)
-
-        if predicted_depth > 0:
-            # Parse EAGLE tree
-            eagle_tree_spec = TreeSpec.from_eagle3_buffers(
-                eagle_tokens,
-                eagle_buffers["tree_attn_mask"],
-                eagle_buffers["tree_position_ids"],
-            )
-
-            # Extract EAGLE prefix and graft point
-            prefix_tokens, parent_node_idx = extract_prefix_tokens_and_node(
-                eagle_tree_spec, predicted_depth
-            )
-
-            # Validate prefix length
-            if len(prefix_tokens) < predicted_depth:
-                # Prefix too short, fall back to EAGLE-only
-                metadata = {
-                    "mode": "boundary_graft",
-                    "predicted_depth": int(predicted_depth),
-                    "threshold": float(samd_config.boundary_graft_threshold),
-                    "eagle_nodes": eagle_nonroot_nodes,
-                    "sam_nodes": 0,
-                    "final_nodes": eagle_nonroot_nodes,
-                    "sam_skipped": True,
-                    "skip_reason": "prefix_too_short",
-                }
-                draft.record_naive_fusion(metadata)
-                if profiler is not None:
-                    profiler.add_step_metadata(metadata)
-                return Candidates(
-                    type=CandidateType.tree,
-                    tokens=torch.tensor([eagle_tokens], dtype=torch.long, device=device),
-                    candidate_tokens=_extract_candidate_tokens_eagle(
-                        eagle_tokens,
-                        eagle_buffers,
-                        device,
-                    ),
-                    buffers_kwargs=eagle_buffers,
-                )
-
-            # SAM continuation from prefix
-            timer = profiler.start_section("draft_sam") if profiler is not None else 0.0
-            try:
-                if len(prefix_tokens) > 0:
-                    # Transfer SAM state to prefix (excluding last token which is the graft point)
-                    draft.sam_dyn.transfer_state(prefix_tokens[:-1])
-                    draft.sam_static.transfer_state(prefix_tokens[:-1])
-                    sam_start_token = prefix_tokens[-1]
-                else:
-                    sam_start_token = start_token
-
-                index_dyn, match_dyn = draft.sam_dyn.lookup(sam_start_token)
-                index_static, match_static_raw = draft.sam_static.lookup(sam_start_token)
-                match_static = match_static_raw - draft.len_bias
-
-                if match_dyn >= match_static:
-                    sam_candidates = draft.sam_dyn.gen_draft_raw(
-                        index_dyn,
-                        sam_start_token,
-                        samd_config.boundary_graft_max_sam_nodes,
-                    )
-                    sam_match_length = match_dyn
-                else:
-                    sam_candidates = draft.sam_static.gen_draft_raw(
-                        index_static,
-                        sam_start_token,
-                        samd_config.boundary_graft_max_sam_nodes,
-                    )
-                    sam_match_length = max(match_static, 0)
-            finally:
-                if profiler is not None:
-                    profiler.end_section("draft_sam", timer)
-
-            # Graft SAM tail onto EAGLE tree
-            timer = profiler.start_section("fusion_logic") if profiler is not None else 0.0
-            try:
-                fused_tree_spec = graft_sam_at_depth(
-                    eagle_tree=eagle_tree_spec,
-                    sam_candidates=sam_candidates,
-                    parent_node_idx=parent_node_idx,
-                    max_added_nodes=samd_config.boundary_graft_max_sam_nodes,
-                )
-
-                # Convert back to buffers
-                tree_attn_mask, tree_position_ids, tree_retrieve_indices = (
-                    fused_tree_spec.to_buffer_lists()
-                )
-
-                fused_tokens = torch.tensor(
-                    fused_tree_spec.tokens,
-                    dtype=torch.long,
-                    device=device,
-                )
-                tokens = fused_tokens.unsqueeze(0)
-
-                tokens_ext = torch.cat([fused_tokens, torch.zeros(1, dtype=torch.long, device=device)])
-                retrieve_indices_tensor = torch.tensor(
-                    tree_retrieve_indices,
-                    dtype=torch.long,
-                    device=device,
-                )
-                candidate_tokens = tokens_ext[retrieve_indices_tensor]
-
-                fused_buffers = {
-                    "tree_attn_mask": torch.tensor(tree_attn_mask, dtype=torch.bool, device=device),
-                    "tree_position_ids": torch.tensor(tree_position_ids, dtype=torch.long, device=device),
-                    "tree_retrieve_indices": retrieve_indices_tensor,
-                }
-
-                sam_nodes_added = len(fused_tree_spec.tokens) - len(eagle_tree_spec.tokens)
-                metadata = {
-                    "mode": "boundary_graft",
-                    "predicted_depth": int(predicted_depth),
-                    "threshold": float(samd_config.boundary_graft_threshold),
-                    "eagle_nodes": eagle_nonroot_nodes,
-                    "sam_nodes": sam_nodes_added,
-                    "final_nodes": len(fused_tree_spec.tokens) - 1,
-                    "sam_match_length": sam_match_length,
-                    "prefix_length": len(prefix_tokens),
-                    "sam_skipped": False,
-                }
-            finally:
-                if profiler is not None:
-                    profiler.end_section("fusion_logic", timer)
-
-            draft.record_naive_fusion(metadata)
-            if profiler is not None:
-                profiler.add_step_metadata(metadata)
-
-            return Candidates(
-                CandidateType.tree,
-                tokens,
-                candidate_tokens,
-                fused_buffers,
-            )
-
-        # No prediction - use pure EAGLE
-        metadata = {
-            "mode": "boundary_graft",
-            "predicted_depth": -1,
-            "threshold": float(samd_config.boundary_graft_threshold),
-            "eagle_nodes": eagle_nonroot_nodes,
-            "sam_nodes": 0,
-            "final_nodes": eagle_nonroot_nodes,
-            "sam_skipped": True,
-            "skip_reason": "no_prediction",
-        }
-        draft.record_naive_fusion(metadata)
-        if profiler is not None:
-            profiler.add_step_metadata(metadata)
-
         return Candidates(
             type=CandidateType.tree,
             tokens=torch.tensor([eagle_tokens], dtype=torch.long, device=device),

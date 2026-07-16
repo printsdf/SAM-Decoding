@@ -28,28 +28,20 @@ class SamdConfig:
         "sam_tree_union_prune",
         "eagle_prefix_sam_expand",
     ] = field(default="none")
-    fusion_mode: Literal[
-        "none", "naive", "payoff_aware", "tree_aware", "rejection_boundary", "boundary_graft", "drafter_mars"
-    ] = field(default="none")
+    fusion_mode: Literal["none", "drafter_mars"] = field(default="none")
     fusion_max_draft_tokens: int = field(default=60)
     fusion_dedup_strategy: Literal["max_score", "sum_score", "keep_both"] = field(
         default="max_score"
     )
     fusion_truncate_strategy: Literal["score", "depth_first"] = field(default="score")
-    rejection_conf_threshold: float = field(default=2.0)  # Phase 1: high margin = confidently wrong
-    boundary_graft_threshold: float = field(default=1.5)  # Phase 2: low margin = uncertain, trigger SAM
-    boundary_graft_max_sam_nodes: int = field(default=8)  # Max SAM nodes to graft
-    boundary_graft_min_depth: int = field(default=3)  # Min depth for prediction
-    boundary_graft_max_depth: int = field(default=8)  # Max depth for prediction
     drafter_mars_theta: float = field(default=0.90)
     drafter_mars_variant: Literal["top_path"] = field(default="top_path")
     drafter_mars_repair: Literal["graft", "naive_fuse"] = field(default="graft")
     drafter_mars_adaptive_theta: bool = field(default=False)
     drafter_mars_target_trigger_rate: float = field(default=0.75)
     drafter_mars_theta_step: float = field(default=0.02)
-    drafter_mars_budget_mode: Literal["fixed", "depth", "ratio"] = field(default="fixed")
     drafter_mars_max_grafts: int = field(default=1)
-    drafter_mars_total_graft_nodes: int = field(default=16)
+    drafter_mars_extend: bool = field(default=False)
     sam_tree_max_nodes: int = field(default=16)
     sam_tree_top_k: int = field(default=4)
     sam_tree_alpha: float = field(default=4.0)
@@ -82,7 +74,7 @@ class SamdConfig:
             raise ValueError(
                 'tree_fusion="{}" only supports tree_method="eagle3"'.format(self.tree_fusion)
             )
-        if self.fusion_mode not in ("none", "naive", "rejection_boundary", "boundary_graft", "drafter_mars"):
+        if self.fusion_mode not in ("none", "drafter_mars"):
             raise ValueError("unsupported fusion_mode: {}".format(self.fusion_mode))
         if not isinstance(self.drafter_mars_theta, Real) or isinstance(self.drafter_mars_theta, bool):
             raise ValueError("drafter_mars_theta must be a positive number")
@@ -110,22 +102,27 @@ class SamdConfig:
             raise ValueError("drafter_mars_theta_step must be a positive number")
         if self.drafter_mars_theta_step <= 0:
             raise ValueError("drafter_mars_theta_step must be a positive number")
-        if self.drafter_mars_budget_mode not in ("fixed", "depth", "ratio"):
-            raise ValueError(
-                "unsupported drafter_mars_budget_mode: {}".format(self.drafter_mars_budget_mode)
-            )
         if not isinstance(self.drafter_mars_max_grafts, int) or isinstance(
             self.drafter_mars_max_grafts, bool
         ):
             raise ValueError("drafter_mars_max_grafts must be a positive integer")
         if self.drafter_mars_max_grafts < 1:
             raise ValueError("drafter_mars_max_grafts must be a positive integer")
-        if not isinstance(self.drafter_mars_total_graft_nodes, int) or isinstance(
-            self.drafter_mars_total_graft_nodes, bool
-        ):
-            raise ValueError("drafter_mars_total_graft_nodes must be a positive integer")
-        if self.drafter_mars_total_graft_nodes < 1:
-            raise ValueError("drafter_mars_total_graft_nodes must be a positive integer")
+        if not isinstance(self.drafter_mars_extend, bool):
+            raise ValueError("drafter_mars_extend must be a bool")
+        if self.fusion_mode == "drafter_mars":
+            # Cache guard sizing: max_predicts must cover the largest per-step
+            # draft. Repair (triggered) and leaf extension (not triggered) are
+            # mutually exclusive per step; extension uses the SAM n_predicts
+            # horizon like the baseline sequence draft (which itself needs
+            # n_predicts + 1). The stock default 70 only covered tree + 8.
+            repair_worst = self.drafter_mars_max_grafts * self.n_predicts
+            extend_worst = self.n_predicts if self.drafter_mars_extend else 0
+            worst_step = max(
+                self.n_predicts + 1,
+                self.eagle3_total_token + 1 + max(repair_worst, extend_worst),
+            )
+            self.max_predicts = max(self.max_predicts, worst_step + 2)
         if self.fusion_mode != "none" and self.tree_method != "eagle3":
             raise ValueError(
                 'fusion_mode="{}" only supports tree_method="eagle3"'.format(self.fusion_mode)
@@ -222,11 +219,7 @@ class SamdConfig:
         from .fusion.types import FusionConfig
 
         return FusionConfig(
-            mode=(
-                "naive"
-                if self.fusion_mode in ("rejection_boundary", "drafter_mars")
-                else self.fusion_mode
-            ),
+            mode="naive",
             max_draft_tokens=self.fusion_max_draft_tokens,
             dedup_strategy=self.fusion_dedup_strategy,
             truncate_strategy=self.fusion_truncate_strategy,

@@ -159,4 +159,5 @@ def test_config_drafter_mars_repair():
 @requires_torch
 def test_config_existing_modes_still_valid():
     assert _config(tree_method="eagle3", fusion_mode="none").fusion_config is None
-    assert _config(tree_method="eagle3", fusion_mode="naive").fusion_config.mode == "naive"
+    with pytest.raises(ValueError):
+        _config(tree_method="eagle3", fusion_mode="naive")

@@ -197,11 +197,24 @@ class TreeSpec:
             return TreeSpec(tokens=list(self.tokens), parents=list(self.parents))
         if int(sequence[0]) != self.tokens[0]:
             raise ValueError("grafted sequence must start with the TreeSpec root token")
+        return self.graft_sequence_at(0, sequence[1:])
 
+    def graft_sequence_at(
+        self,
+        anchor_index: int,
+        continuation: List[int],
+    ) -> "TreeSpec":
+        """``graft_sequence`` anchored at an arbitrary node.
+
+        Same walk-reuse-or-append semantics: existing children matching the
+        next token are reused, missing ones are appended as a chain.
+        """
+        if anchor_index < 0 or anchor_index >= len(self.tokens):
+            raise IndexError("anchor_index out of range")
         tokens = list(self.tokens)
         parents = list(self.parents)
-        parent = 0
-        for token in sequence[1:]:
+        parent = int(anchor_index)
+        for token in continuation:
             token = int(token)
             child = None
             for index in range(parent + 1, len(tokens)):

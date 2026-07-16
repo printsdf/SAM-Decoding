@@ -5,6 +5,27 @@ server before Phase B starts (user decision 2026-07-15).
 
 ## Checklist
 
+### Phase A2 — author-horizon grafts + leaf extension (user decision 2026-07-15)
+
+- [x] A2.1 Grafts use the author's SAM semantics: `gen_draft_raw` with the
+      `n_predicts` horizon (no artificial caps); `TreeSpec.graft_sequence_at`
+      (walk-reuse-or-append, generalizing the author's `graft_sequence`)
+      replaces the boundary_graft chain append.
+- [x] A2.2 `drafter_mars_extend`: on non-triggered / repair-unavailable steps,
+      graft the SAM continuation at the greedy leaf (n_predicts horizon).
+- [x] A2.3 Deleted previous-experiment code: `samd/fusion/boundary_graft.py`,
+      `samd/fusion/rejection_boundary.py`, fusion_mode branches
+      naive/rejection_boundary/boundary_graft in utils.py, boundary/budget
+      config fields + CLI flags, budget schedules in the adaptive module.
+      fusion_mode is now `none | drafter_mars`.
+- [x] A2.4 `max_predicts` auto-raised for drafter_mars worst-case tree size
+      (fixes the pre-existing K2=77 > 70 guard hole).
+- [x] A2.5 Batch `scripts/run_drafter_mars_horizon_batch.sh` (same-boot
+      baseline, g40, g40_k2, ext, g40_k2_ext); stale batch scripts removed.
+      NOTE: graft length semantics changed (8 → n_predicts), so Phase A b8
+      numbers are historical; horizon batch re-baselines everything.
+- [ ] A2.6 Server run + record results.
+
 ### Phase A — adaptive trio
 
 - [x] A1 `samd/fusion/drafter_mars_adaptive.py`: `AdaptiveThetaController`
