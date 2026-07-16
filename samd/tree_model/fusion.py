@@ -21,51 +21,6 @@ def _squeeze_singletons(value: Any) -> Any:
     return value
 
 
-def tree_buffers_from_parents(
-    tokens: List[int],
-    parents: List[int],
-    device: Optional[Any] = None,
-    mask_dtype: Optional[Any] = None,
-) -> Dict[str, Any]:
-    """Torch equivalent of ``TreeSpec.to_buffers`` (hot-path replacement).
-
-    Row-wise ancestor closure instead of the O(n^2) Python mask build; output
-    matches ``to_buffers`` exactly (bool (1,1,n,n) mask cast to mask_dtype,
-    (1,n) position ids, -1-padded retrieve indices in leaf-index order).
-    """
-    import torch
-
-    n = len(tokens)
-    mask = torch.eye(n, dtype=torch.bool)
-    depth = torch.zeros(n, dtype=torch.long)
-    is_parent = torch.zeros(n, dtype=torch.bool)
-    for index in range(1, n):
-        parent = parents[index]
-        mask[index] |= mask[parent]
-        depth[index] = depth[parent] + 1
-        is_parent[parent] = True
-
-    leaves = (~is_parent).nonzero().flatten().tolist()
-    max_depth = int(depth.max().item()) + 1 if n > 0 else 1
-    retrieve = torch.full((len(leaves), max_depth), -1, dtype=torch.long)
-    for row, leaf in enumerate(leaves):
-        node = leaf
-        level = int(depth[leaf].item())
-        while node != -1:
-            retrieve[row, level] = node
-            node = parents[node]
-            level -= 1
-
-    mask_tensor = mask.view(1, 1, n, n).to(device)
-    if mask_dtype is not None and mask_dtype != torch.bool:
-        mask_tensor = mask_tensor.to(mask_dtype)
-    return {
-        "tree_attn_mask": mask_tensor,
-        "tree_position_ids": depth.view(1, n).to(device),
-        "tree_retrieve_indices": retrieve.to(device),
-    }
-
-
 def eagle3_parents_from_buffers(
     tree_attn_mask: Any,
     tree_position_ids: Any,
