@@ -4,7 +4,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from samd.tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
+from samd.tree_model.fusion import (
+    TreeSpec,
+    eagle3_parents_from_buffers,
+    tree_buffers_from_parents,
+)
 
 
 TREES = [
@@ -29,6 +33,16 @@ def test_parents_match_from_eagle3_buffers(parents):
 
     assert derived == parents
     assert TreeSpec.from_eagle3_buffers(tokens, mask, pos).parents == parents
+
+
+@pytest.mark.parametrize("parents", TREES)
+def test_tree_buffers_match_to_buffers(parents):
+    tokens = list(range(200, 200 + len(parents)))
+    spec = TreeSpec(tokens=tokens, parents=parents)
+    expected = spec.to_buffers(mask_dtype=torch.float32)
+    got = tree_buffers_from_parents(tokens, parents, mask_dtype=torch.float32)
+    for key in expected:
+        assert torch.equal(expected[key], got[key]), key
 
 
 def test_gather_matches_vocab_topk():

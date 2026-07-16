@@ -84,6 +84,9 @@ run_one horizon_g40_k2   "${MARS_ARGS[@]}" --drafter_mars_max_grafts 2
 run_one horizon_ext      "${MARS_ARGS[@]}" --drafter_mars_extend
 run_one horizon_g40_k2_ext "${MARS_ARGS[@]}" --drafter_mars_max_grafts 2 --drafter_mars_extend
 
+# 3b) profile 臂（诊断 fusion_logic vs verify 成本归属，tok/s 不作数）
+run_one horizon_g40_k2_ext_profile "${MARS_ARGS[@]}" --drafter_mars_max_grafts 2 --drafter_mars_extend --profile-fusion
+
 # 4) 汇总
 echo "==== $(date '+%F %T') SUMMARY ===="
 python3 scripts/speed.py \
@@ -93,6 +96,7 @@ python3 scripts/speed.py \
   "${ANSWER_DIR}/horizon_ext.jsonl" \
   "${ANSWER_DIR}/horizon_g40_k2_ext.jsonl" \
   | tee "${ANSWER_DIR}/horizon_batch_summary.txt"
+echo "profile 输出: ${ANSWER_DIR}/horizon_g40_k2_ext_profile.jsonl.fusion_profile.txt"
 [ -n "$FAILED" ] && echo "FAILED runs:${FAILED}"
 
 # 5) 飞书 + 关机

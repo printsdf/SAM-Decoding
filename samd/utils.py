@@ -118,7 +118,11 @@ def gen_candidates(
 
     if samd_config.fusion_mode == "drafter_mars":
         from .fusion.drafter_mars_gate import top_path_ratio_trigger
-        from .tree_model.fusion import TreeSpec, eagle3_parents_from_buffers
+        from .tree_model.fusion import (
+            TreeSpec,
+            eagle3_parents_from_buffers,
+            tree_buffers_from_parents,
+        )
 
         # Adaptive-theta controller (per request, created in DraftModel.reset);
         # None unless drafter_mars_adaptive_theta is on — metadata's
@@ -307,7 +311,9 @@ def gen_candidates(
                             tree_spec.tokens
                         )
                         if sam_nodes_added > 0:
-                            fused_buffers = fused_tree_spec.to_buffers(
+                            fused_buffers = tree_buffers_from_parents(
+                                fused_tree_spec.tokens,
+                                fused_tree_spec.parents,
                                 device=device,
                                 mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
                             )
@@ -450,7 +456,9 @@ def gen_candidates(
                         })
                     sam_nodes_added = len(fused_tree_spec.tokens) - base_nodes
                     if sam_nodes_added > 0:
-                        fused_buffers = fused_tree_spec.to_buffers(
+                        fused_buffers = tree_buffers_from_parents(
+                            fused_tree_spec.tokens,
+                            fused_tree_spec.parents,
                             device=device,
                             mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
                         )
@@ -652,7 +660,9 @@ def gen_candidates(
                             tree_spec.tokens
                         )
                         if extend_nodes > 0:
-                            fused_buffers = fused_tree_spec.to_buffers(
+                            fused_buffers = tree_buffers_from_parents(
+                                fused_tree_spec.tokens,
+                                fused_tree_spec.parents,
                                 device=device,
                                 mask_dtype=eagle_buffers["tree_attn_mask"].dtype,
                             )
