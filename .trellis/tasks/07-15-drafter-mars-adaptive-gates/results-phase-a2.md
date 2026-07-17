@@ -83,10 +83,31 @@ SAM-as-draft-source is exhausted: chain repair + leaf extension at +6.28% MAT /
 the ceiling is the SAM source (→ scope/systematic study) or our selector
 (→ learned policy).
 
+## Oracle upper bound (2026-07-16, drafter_mars_oracle)
+
+Ungated grafts (n_predicts horizon at every greedy top-path parent + leaf,
+~320 extra nodes/step, tok/s not meaningful at 0.66x):
+
+| | MAT | vs baseline |
+| --- | ---: | ---: |
+| baseline | 7.4849 | +0.00% |
+| operating point r8k2_e16 (≤32 extra nodes) | 7.9550 | +6.28% |
+| **oracle ceiling (unbounded, perfect selection)** | **8.4170** | **+12.45%** |
+
+Reading: the mechanism set (SAM continuations + EAGLE tree) has a +12.45%
+ceiling; the hand-tuned ratio selector captures 50% of it with ~1/10 of the
+node spend. The remaining +6.17pp is a SELECTOR/BUDGET problem, not a source
+problem — exactly the case for the Phase B learned head (predict where/what/
+how-much under a node budget). Realistic target: +8-9% MAT at positive
+throughput (capture ~2-3pp of the gap within ~30 extra nodes).
+
+Paper frame: "X% of oracle ceiling captured at Y% of oracle cost" is the
+headline efficiency metric; ratio gate = zero-shot baseline, ACI = training-
+free calibration, learned head = method.
+
 ## Next
 
-- Oracle upper-bound (in progress): per-step perfect selection over the current
-  mechanism set → is the headroom in the source or the selector?
+- Phase B learned multi-task head (start now): capture → dataset → train →
+  online arms vs ratio gate, per the revised design.
 - Cross-domain batches (MT-Bench / GSM8K / domain-corpus QA) — decides the
   paper's claim scope; adaptive-theta (ACI) arm rides along.
-- Phase B learned head: predict (trigger, route, horizon) per site.
