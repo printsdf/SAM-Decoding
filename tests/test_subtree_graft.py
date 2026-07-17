@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -30,12 +32,15 @@ def _load(name, rel):
 _ensure_pkg("samd", "samd")
 _ensure_pkg("samd.tree_model", "samd/tree_model")
 _ensure_pkg("samd.sam", "samd/sam")
+_ensure_pkg("samd.fusion", "samd/fusion")
 _fusion = _load("samd.tree_model.fusion", "samd/tree_model/fusion.py")
 _tree_draft = _load("samd.sam.tree_draft", "samd/sam/tree_draft.py")
+_prune = _load("samd.fusion.drafter_mars_prune", "samd/fusion/drafter_mars_prune.py")
 
 TreeSpec = _fusion.TreeSpec
 SamTreeBudget = _tree_draft.SamTreeBudget
 build_sam_tree = _tree_draft.build_sam_tree
+prune_eagle_leaves_to_budget = _prune.prune_eagle_leaves_to_budget
 
 
 def test_graft_tree_at_appends_and_reuses():
@@ -82,3 +87,49 @@ def test_build_sam_tree_branches_by_frequency():
     assert 10 in spec.tokens and 11 in spec.tokens  # both branches expanded
     assert 12 in spec.tokens                        # deeper continuation reached
     assert stats["node_count"] == len(spec.tokens)
+
+
+def test_prune_eagle_leaves_keeps_budget_and_graft_path():
+    # Original EAGLE tree has 6 nodes; SAM graft appends 7 -> 8 under node 2.
+    fused = TreeSpec(
+        tokens=[0, 1, 2, 3, 4, 5, 7, 8],
+        parents=[-1, 0, 0, 1, 1, 2, 2, 6],
+    )
+    pruned, stats = prune_eagle_leaves_to_budget(
+        fused,
+        eagle_node_count=6,
+        eagle_logprobs=[0.0, -0.1, -0.2, -2.0, -0.3, -1.5],
+        max_total_nodes=6,
+        protected_indices=[0, 1, 3],
+    )
+
+    assert len(pruned.tokens) == 6
+    assert stats["pruned_eagle_nodes"] == 2
+    assert 7 in pruned.tokens and 8 in pruned.tokens
+    assert 3 in pruned.tokens  # protected greedy-path leaf
+    assert set(stats["removed_eagle_indices"]) == {4, 5}
+
+
+def test_prune_is_noop_when_fused_tree_already_fits():
+    tree = TreeSpec(tokens=[0, 1, 2], parents=[-1, 0, 1])
+    pruned, stats = prune_eagle_leaves_to_budget(
+        tree,
+        eagle_node_count=3,
+        eagle_logprobs=[0.0, -0.1, -0.2],
+        max_total_nodes=3,
+        protected_indices=[0, 1, 2],
+    )
+    assert pruned is tree
+    assert stats["pruned_eagle_nodes"] == 0
+
+
+def test_prune_eagle_leaves_rejects_impossible_budget():
+    fused = TreeSpec(tokens=[0, 1, 2, 7], parents=[-1, 0, 1, 2])
+    with pytest.raises(ValueError, match="cannot satisfy"):
+        prune_eagle_leaves_to_budget(
+            fused,
+            eagle_node_count=3,
+            eagle_logprobs=[0.0, -0.1, -0.2],
+            max_total_nodes=2,
+            protected_indices=[0, 1, 2],
+        )

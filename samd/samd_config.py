@@ -42,6 +42,8 @@ class SamdConfig:
     drafter_mars_theta_step: float = field(default=0.02)
     drafter_mars_max_grafts: int = field(default=1)
     drafter_mars_extend: bool = field(default=False)
+    # Upper-bound mode: graft SAM at every greedy top-path parent, ungated.
+    drafter_mars_oracle: bool = field(default=False)
     # Root-inclusive final size cap for repaired/extended EAGLE trees.
     drafter_mars_tree_budget: Optional[int] = field(default=None)
     # Per-mechanism horizons; None = the author's n_predicts horizon.

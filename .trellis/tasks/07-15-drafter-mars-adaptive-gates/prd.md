@@ -1,6 +1,6 @@
 # PRD: Adaptive and learned gates for drafter-MARS
 
-Status: planning approved (user 2026-07-15)
+Status: closed by user (2026-07-17); Phase B and cross-domain follow-up canceled
 Task: `drafter-mars-adaptive-gates`
 Baseline operating point (archived task 06-06): online drafter_mars, theta=0.86,
 graft budget=8 → MAT +4.01%, tok/s +2.61% vs SAM[EAGLE3] on HumanEval 0-164.
@@ -61,3 +61,16 @@ head on drafter states may separate reject/accept boundaries better.
 - Cross-domain benches (separate task after this one).
 - vLLM / batch>1 integration.
 - Verifier-side relaxed acceptance (MARS proper).
+
+## Closeout decision (2026-07-17)
+
+Phase A established a final balanced HumanEval point at MAT +6.28% and
+throughput +2.0%, with a simpler arm reaching +2.61% throughput. Fixed-budget,
+preallocated-budget, branching-subtree, and hand-written adaptive scheduling
+variants did not materially improve the system result. Although an unbounded
+oracle reached MAT +12.45%, realizing that gap requires the learned selector
+defined in Phase B plus broader capture/training/evaluation work.
+
+The user judged the observed end-to-end gain too small for that investment.
+Therefore Phase B acceptance criteria are canceled rather than pending, and the
+task is ready for archival.

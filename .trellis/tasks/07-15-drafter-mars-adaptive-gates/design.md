@@ -2,12 +2,17 @@
 
 Depends on: prd.md. Baseline semantics = commit `fbd338c` drafter_mars branch.
 
+Closeout: Phase A is retained as experimental/ablation code. Phase B was
+canceled by user decision on 2026-07-17 because the final throughput gain was
+too small to justify learned-gate complexity and cross-domain GPU work.
+
 ## Deletability contract
 
 New modules own all logic; hook points are guarded one-liners:
 
 ```text
 samd/fusion/drafter_mars_adaptive.py   # Phase A: controller + budget + multi-trigger (pure, no torch)
+samd/fusion/drafter_mars_prune.py      # Phase A3: fixed-budget EAGLE leaf pruning (pure, no torch)
 samd/fusion/gate_head.py               # Phase B: online head inference (torch, lazy import)
 evaluation/gate_head/                  # Phase B: capture/dataset/train/eval (offline)
 tests/test_drafter_mars_adaptive.py    # torch-free
@@ -76,6 +81,27 @@ Config: `drafter_mars_budget_mode: Literal["fixed","depth","ratio"] = "fixed"`.
 
 A1 changes only theta input; A2 only budget input; A3 only the repair loop.
 They compose freely; eval arms test each alone plus the full trio.
+
+## Phase A3 — fixed verifier-node budget (2026-07-16 pivot)
+
+Composite experiments raised MAT by 5.65--6.38%, but wall-clock throughput by
+only 1.5--2.0% because the appended graft nodes increased verifier cost per
+step. Fixed-budget repair therefore changes the integration rule rather than
+the gate:
+
+- `drafter_mars_tree_budget=None` preserves append-only behavior.
+- A positive budget is root-inclusive; the primary arm uses 60, equal to the
+  stock EAGLE3 tree size.
+- After graft/extension, keep every newly added SAM node, its ancestor closure,
+  and the EAGLE greedy top path.
+- Iteratively remove only unprotected EAGLE leaves with the lowest mean path
+  logprob, remapping the surviving tree to valid contiguous indices.
+- Apply the same helper to single graft, multi-graft, subtree repair, and leaf
+  extension so the verifier-node contract is consistent across mechanisms.
+
+The first evaluation compares append-only r8/e16 against budget-60 r8/e16 and
+budget-60 r8/K2/e16. A budget violation is a hard error rather than a silent
+fallback.
 
 ## Phase B — learned multi-task decision head (revised 2026-07-15 after A8)
 

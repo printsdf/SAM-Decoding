@@ -105,9 +105,8 @@ Paper frame: "X% of oracle ceiling captured at Y% of oracle cost" is the
 headline efficiency metric; ratio gate = zero-shot baseline, ACI = training-
 free calibration, learned head = method.
 
-## Next
+## Closeout
 
-- Phase B learned multi-task head (start now): capture → dataset → train →
-  online arms vs ratio gate, per the revised design.
-- Cross-domain batches (MT-Bench / GSM8K / domain-corpus QA) — decides the
-  paper's claim scope; adaptive-theta (ACI) arm rides along.
+- Phase B and the planned cross-domain batches were canceled by the user on
+  2026-07-17. The selector gap remains a research observation, not a promised
+  implementation item.

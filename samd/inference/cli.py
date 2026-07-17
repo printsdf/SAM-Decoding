@@ -55,6 +55,7 @@ def main(args):
             fusion_max_draft_tokens=args.fusion_max_draft_tokens,
             fusion_dedup_strategy=args.fusion_dedup_strategy,
             fusion_truncate_strategy=args.fusion_truncate_strategy,
+            drafter_mars_tree_budget=args.drafter_mars_tree_budget,
             tree_model_path=args.tree_model_path,
             eagle3_total_token=args.eagle3_total_token,
             eagle3_depth=args.eagle3_depth,
@@ -281,9 +282,10 @@ if __name__ == "__main__":
         "--fusion_mode",
         type=str,
         default="none",
-        choices=["none", "naive"],
+        choices=["none", "drafter_mars"],
     )
     parser.add_argument("--fusion_max_draft_tokens", type=int, default=60)
+    parser.add_argument("--drafter_mars_tree_budget", type=int, default=None)
     parser.add_argument(
         "--fusion_dedup_strategy",
         type=str,

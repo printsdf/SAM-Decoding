@@ -11,6 +11,104 @@
 
 ---
 
+## 2026 Follow-up Research: Final Status
+
+> **Status: concluded on 2026-07-17.** The follow-up SAM + EAGLE3 fusion and
+> Drafter-MARS experiments are archived. The best HumanEval configurations
+> improved mean accepted tokens (MAT) substantially, but end-to-end throughput
+> settled around **+2%**. That gain did not justify a learned selector, more
+> cross-domain GPU runs, and the additional runtime complexity.
+
+The original SAM-Decoding implementation and paper results remain below. This
+section documents the later research branch, including negative results and
+provenance limitations.
+
+### Final HumanEval result
+
+Experiments used greedy decoding, batch size 1, Llama-3.1-8B-Instruct,
+EAGLE3, and the canonical 164-problem HumanEval file (SHA256 prefix
+`fc49f930`). Throughput comparisons are valid only within the same batch or
+boot; absolute tokens/s varied across machines and restarts.
+
+| Configuration | MAT | MAT vs baseline | Throughput vs baseline | Readout |
+| --- | ---: | ---: | ---: | --- |
+| SAM[EAGLE3] baseline | 7.4849 | +0.00% | 1.0000x | Reference |
+| Drafter-MARS, theta 0.86, graft 8, K=1 | 7.7849 | +4.01% | **1.0261x** | Best measured throughput point |
+| Drafter-MARS, repair 8, K=2, extension 16 | **7.9550** | **+6.28%** | **1.0199x** | Final balanced operating point |
+| Branching SAM subtree, best tested arm | 7.9124 | +5.71% | 1.0223x | Did not beat chain repair |
+| Fixed 60-node budget, repair 8/K=2/extension 16 | 7.7834 | +3.99% | 1.0134x | Worse than append-only repair |
+| Preallocated E53 + repair 8/extension 8 | 7.7765 | +3.90% | 1.0107x | Dominated by append-only repair |
+| Unbounded oracle repair | 8.4170 | +12.45% | about 0.66x | Diagnostic ceiling, not deployable |
+
+The unbounded oracle shows that better candidate selection could recover more
+MAT, but it does so with roughly 320 additional nodes per step. Converting that
+gap into useful throughput would require a learned, budget-aware selector. That
+Phase B was intentionally not implemented as part of the closeout decision.
+
+### Experiment index
+
+| Experiment family | Dataset | Result | Decision |
+| --- | --- | --- | --- |
+| SAM sequence graft onto EAGLE3 | MT-Bench, MedQuAD | About +4.3% tokens/s vs legacy SAMD+EAGLE3 in the recorded single-run comparison | Retained as the strongest earlier fusion baseline; stronger repeat evidence is absent |
+| Broad SAM tree union + pruning | MT-Bench, MedQuAD | -7.8% tokens/s on MT-Bench and directionally worse on MedQuAD | Rejected |
+| EAGLE-prefix local SAM expansion | MT-Bench, MedQuAD | Near-neutral: about -0.25% tokens/s with +0.002 MAT | Kept only as a conservative ablation |
+| Naive logprob fusion | MT-Bench | 0.957x EAGLE3 throughput and slightly lower MAT | Rejected as a performance method; profiling utilities retained |
+| Recorded-candidate oracle provenance | HumanEval | Canonical EAGLE MAT 6.8180 and perfect-oracle gap +2.72%; an earlier +9.65% trace lost its question/config provenance | Use only the canonical `fc49f930` dataset result |
+| Depth-decoupled SAM extension oracle | MT-Bench, MedQA | Best oracle gaps +0.61% and +0.00%, below the 3% gate | Rejected |
+| Unconditioned boundary predictor | HumanEval q0-20 | 99.89% trigger rate; useful oracle MAT but effectively always-on | Rejected; motivated top-path Drafter-MARS |
+| Online Drafter-MARS theta sweep | HumanEval | theta 0.86, graft budget 8: +4.01% MAT and +2.61% tokens/s | Accepted as the best simple operating point |
+| Adaptive theta and hand-written budget schedules | HumanEval | Adaptive theta -0.35% MAT; depth/ratio budgets -1.99%/-2.32% | Rejected in-domain |
+| Multi-graft | HumanEval | K=2 added MAT at essentially unchanged throughput; K=3 was marginal | K=2 used in the final composite arm |
+| Repair + leaf extension horizons | HumanEval | Final composite reached +6.28% MAT and +2.0% tokens/s | Best balanced result, but too small for continued investment |
+| Branching SAM subtree | HumanEval | All tested subtree arms lost MAT versus the chain operating point | Rejected; SAM value was in depth, not width |
+| Fixed/post-pruned verifier budget | HumanEval | Lower MAT and lower speedup than append-only repair | Rejected |
+| Preallocated EAGLE/SAM budget | HumanEval | Similar wall time but 0.131 lower MAT than append-only repair | Rejected |
+| Spectral/OOV hidden recovery probes | MedQuAD dumps | High-rank CCA/ridge recovered most prompt-first-pass OOV oracle signal | Diagnostic only; no decoding-step or end-to-end speed claim |
+| RerankSpec pilot | Small debug sample | Zero oracle gap on an invalid single-path proposer setup | Moved out of scope; not evidence against genuine multi-candidate reranking |
+
+### Why the research was closed
+
+- The best HumanEval throughput uplift stayed near 2%, while the method added
+  gating, grafting, tree-shape, and tuning complexity.
+- Extra accepted tokens were increasingly paid for by verifier cost. Fixed
+  node-count policies did not solve this because tree shape and lost EAGLE
+  coverage mattered as much as total node count.
+- The remaining oracle gap is a selector/budget-learning problem, not a simple
+  SAM candidate-source problem. Pursuing it would require a new learned head,
+  capture/training infrastructure, and cross-domain validation.
+- Several attractive alternatives were empirically falsified: broad tree
+  union, depth-decoupled tails, hand-written adaptive budgets, branching SAM
+  subtrees, post-pruning, and preallocated budgets.
+
+### Detailed reports
+
+- [Drafter-MARS final task report](.trellis/tasks/archive/2026-07/07-15-drafter-mars-adaptive-gates/README.md)
+- [Drafter-MARS result notes](.trellis/tasks/archive/2026-07/07-15-drafter-mars-adaptive-gates/docs/experiments/results/)
+- [Dual-draft fusion experiment index](.trellis/tasks/archive/2026-07/06-06-dual-draft-fusion/docs/experiments/README.md)
+- [Full dual-draft fusion report](.trellis/tasks/archive/2026-07/06-06-dual-draft-fusion/docs/experiments/results/2026-07-13-dual-draft-fusion-report.md)
+- [Closed and negative experiment reports](.trellis/tasks/archive/2026-07/06-06-dual-draft-fusion/docs/archive/closed-experiments/results/)
+
+### Reproduction notes
+
+The 2026 experiments require a CUDA model environment with the base and EAGLE3
+checkpoints. The local checkout is sufficient for static checks and pure
+Python tests, but not for model-dependent evaluation. Representative batch
+entry points are:
+
+```bash
+bash scripts/run_drafter_mars_sweep.sh
+bash scripts/run_drafter_mars_composite_batch.sh
+bash scripts/run_drafter_mars_fixed_budget_batch.sh
+bash scripts/run_drafter_mars_preallocated_budget_batch.sh
+```
+
+Long-running scripts read model paths and an optional `FEISHU_WEBHOOK` from
+environment variables. No webhook or credential is stored in the repository.
+Raw model-answer JSONL files are gitignored; the checked-in result notes record
+the metrics, configurations, caveats, and decisions used in this closeout.
+
+---
+
 ## Introduction
 
 SAM-Decoding introduces a new speculative decoding technique designed for Large Language Models (LLMs). This method is particularly suited for scenarios where the model's generated content overlaps with the input context or existing textual information. It is primarily aimed at applications where the model's output aligns with the given prompt or text base, such as summarization, retrieval-augmented generation, code editing, and document-based question answering. Moreover, SAM-Decoding maintains performance levels that are comparable to those of the leading speculative decoding methods in other domains.
@@ -52,9 +150,9 @@ python evaluation/inference_samd.py \
     ...
 ```
 
-## Experiment
+## Original Paper Experiment
 
-Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
+Experiment results on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 
 <!-- **warning: Please note that these results are not final and may be revised** -->
 
@@ -66,7 +164,7 @@ Expeiment result on [Spec-Bench](https://github.com/hemingkx/Spec-Bench)
 | ------------------------------------------------------------  | :---------------------: | :---------: | :------------: | :----------------: | :--------------------: | :-----------------------: | :-------------------: | :-------: |
 | PLD                                                           |          1.60x          |    0.95x    |     2.44x      |       1.18x        |         1.59x          |           1.72x           |         1.75          |   1.56x   |
 | SAM-Decoding                                                  |          2.07x          |    1.20x    |     2.43x      |       1.62x        |         1.91x          |           1.81x           |         2.30          |   1.84x   |
-| [Tokey Recycle](https://arxiv.org/abs/2408.08696)             |          1.92x          |    1.61x    |     1.96x      |       1.71x        |         2.16x          |           1.68x           |         2.83          |   1.84x   |
+| [Token Recycle](https://arxiv.org/abs/2408.08696)             |          1.92x          |    1.61x    |     1.96x      |       1.71x        |         2.16x          |           1.68x           |         2.83          |   1.84x   |
 | SAM-Decoding\[Token Recycle\]                                 |          2.48x          |    1.73x    |     2.86x      |       1.98x        |         2.44x          |           2.14x           |         3.03          |   2.27x   |
 | [EAGLE2](https://github.com/SafeAILab/EAGLE)                  |          2.87x          |    1.92x    |     2.33x      |       2.20x        |         2.88x          |           2.03x           |         4.36          |   2.38x   |
 | SAM-Decoding\[EAGLE2\]                                        |          3.09x          |    1.93x    |     2.95x      |       2.28x        |         2.93x          |           2.28x           |         4.62          |   2.58x   |
@@ -88,7 +186,7 @@ The data we used is available at this [link](https://drive.google.com/file/d/1N7
 
 ## Inference
 
-An example of using SAM-Decidubg is provided in `tests/test_samd.py` and ``tests/test_samd_sam_only.py``, which can be executed via `scripts/test_samd.sh` and `scripts/test_samd_sam_only.sh`. 
+An example of using SAM-Decoding is provided in `tests/test_samd.py` and `tests/test_samd_sam_only.py`, which can be executed via `scripts/test_samd.sh` and `scripts/test_samd_sam_only.sh`.
 
 Note that this script relies on a SAM (StaticSAM) built from alpaca dataset, GSM8K and python-instruction. If you didn't build a static SAM, please set sam_path to None.
 

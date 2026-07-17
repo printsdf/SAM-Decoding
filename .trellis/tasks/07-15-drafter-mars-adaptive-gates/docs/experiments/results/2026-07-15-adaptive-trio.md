@@ -40,7 +40,7 @@ Learned multi-task decision head (Phase B) = method; MARS ratio = zero-shot
 baseline; ACI-calibrated theta = training-free baseline; fixed theta =
 ablation; budget-schedule negatives = motivation for learned budget.
 
-## Open
+## Closeout
 
-- Optional probe: K=2 + budget 12 (total cap 24) as MAT-max arm.
-- Cross-domain batch (separate task) decides the adaptive-theta arm's value.
+- The optional K=2 + budget-12 and cross-domain adaptive-theta follow-ups were
+  not pursued after the project closeout decision on 2026-07-17.

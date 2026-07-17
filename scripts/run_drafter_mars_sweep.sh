@@ -20,12 +20,13 @@ QUESTION_END=${QUESTION_END:-164}
 SHUTDOWN=${SHUTDOWN:-1}
 ANSWER_DIR=evaluation/data/humaneval/model_answer
 BASELINE_ID=${BASELINE_ID:-samd_eagle3_baseline}
-FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-https://open.feishu.cn/open-apis/bot/v2/hook/73fdb716-16d7-4948-8e9a-3db134b5d234}
+FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-}
 # ==================== 配置结束 ====================
 
 export PYTHONPATH="$(pwd)${PYTHONPATH:+:${PYTHONPATH}}"
 
 notify_feishu() {
+  [ -z "$FEISHU_WEBHOOK" ] && return 0
   FEISHU_WEBHOOK="$FEISHU_WEBHOOK" TEXT="$1" python3 - <<'PY' || echo "feishu notify failed"
 import json, os, urllib.request
 req = urllib.request.Request(

@@ -10,9 +10,10 @@ ran, which model/config was used, and where artifacts were written.
 
 ## What to Print
 
-* CLI inference entry points should print important runtime choices such as
-  `tree_method`, `tree_fusion`, `tree_model_path`, `max_cache_len`, and output
-  paths.
+* CLI inference entry points should print only knobs that affect the selected
+  draft/fusion path (for example `tree_method`, `fusion_mode`, active
+  `tree_fusion` budget knobs, active `drafter_mars_*` knobs, `max_cache_len`,
+  and output paths). Do not dump inactive default knobs from other modes.
 * Benchmark scripts should print phase boundaries, elapsed time, bench name,
   group/model id, answer file path, and analysis output.
 * Analysis scripts should print warnings for skipped malformed trace steps and
