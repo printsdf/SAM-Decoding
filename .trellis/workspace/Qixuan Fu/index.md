@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-07-15
+- **Total Sessions**: 2
+- **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-07-17 | Close drafter-mars adaptive gates | `0b4263f` | `feature/dual-draft-fusion` |
 | 1 | 2026-07-15 | Drafter-MARS online: gated graft beats SAM[EAGLE3] on MAT and throughput | `011c5c5`, `ccbf695`, `8721d75`, `459fa43`, `1f6c11e`, `6a4b9c8`, `0a557b4`, `d8cb30e`, `ceaf90b`, `409f926`, `b554ed6`, `fbd338c`, `589ffa4`, `4e662a5`, `0cf3b41`, `b33cdae`, `f4d71fb` | `feature/dual-draft-fusion` |
 <!-- @@@/auto:session-history -->
 
